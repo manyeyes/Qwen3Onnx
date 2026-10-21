@@ -2,7 +2,7 @@
 
 使用 C#、ONNX Runtime 在本地运行 Qwen3 INT8 / W4A32 ONNX 模型。方案包含可复用的推理核心、交互式控制台和独立 CLI，支持场景化生成参数、KV Cache、对话历史、日志及可扩展的推理引擎接口。
 
-> 项目使用本地模型文件进行推理，不会自动下载模型。首次运行前请从下方 ModelScope 页面获取模型，并按本项目约定准备模型目录。
+> CLI 和交互式控制台直接使用本地模型文件；桌面端可在模型管理中按需下载内置 ModelScope 模型。模型权重不包含在代码仓库中。
 
 ## 功能
 
@@ -11,6 +11,7 @@
 - **两种应用入口**：
   - `Qwen3.Cli`：单次问答命令行，提供参数解析、校验、帮助、日志和退出码。
   - `Qwen3.Console`：交互式问答，提供多轮记忆、场景选择和思考模式控制。
+- **Avalonia 桌面应用**：`Qwen3.Desktop` 使用 MVVM 页面切换，提供本地聊天、文本附件、模型 Git/HTTP 下载、SQLite 历史和本地账户管理；侧栏展示最近 100 条记录，登录用户可管理自己的全部对话。
 - **生成控制**：温度、Top-P / Top-K、重复惩罚、思考预算、输出长度、流式输出及复读/循环检测。
 - **场景配置**：`fast_qa`、`deep`、`roleplay`、`precise`、`chitchat`。
 - **本地日志**：CLI 标准错误日志及可选 JSON Lines 日志文件。
@@ -43,7 +44,8 @@ decoder.int8.onnx
 Qwen3Onnx.sln
 ├── Qwen3.Inference/   推理抽象、Qwen3 ONNX 引擎、采样和对话管理
 ├── Qwen3.Cli/         System.CommandLine 单次问答 CLI
-└── Qwen3.Console/     交互式控制台
+├── Qwen3.Console/     交互式控制台
+└── Qwen3.Desktop/     Avalonia + MVVM 跨平台桌面应用
 ```
 
 ## 快速开始
@@ -51,7 +53,7 @@ Qwen3Onnx.sln
 ### 环境
 
 - .NET 8 SDK
-- Windows x64（当前工程直接引用 `Tokenizers.DotNet.runtime.win-x64`）
+- Windows、Linux 或 macOS（桌面发布请使用对应的 .NET 8 Runtime）
 - 与当前推理引擎输入输出契约兼容的模型文件
 
 ### 构建
@@ -60,6 +62,14 @@ Qwen3Onnx.sln
 dotnet restore Qwen3Onnx.sln
 dotnet build Qwen3Onnx.sln
 ```
+
+### 桌面端
+
+```powershell
+dotnet run --project Qwen3.Desktop
+```
+
+首次启动会生成一次性管理员密码并在应用中显示；请立即保存。桌面端功能、模型安装方式、SQLite 数据位置、账户隔离和发布说明见[桌面端使用指南](docs/USER_GUIDE.md#14-avalonia-桌面端)。
 
 ### CLI
 
@@ -153,7 +163,7 @@ Console.WriteLine($"生成速度：{result.Generation.TokensPerSecond:F1} tokens
 - Tokenizer：`Tokenizers.DotNet 1.4.1`
 - 日志：`Microsoft.Extensions.Logging.Console 9.0.0`
 
-当前 ONNX 推理实现显式使用 CPU Execution Provider；Windows x64 Tokenizers 原生运行时是当前项目直接配置的平台依赖。其他操作系统需要更换 Tokenizers 原生包，并在目标平台实际构建、运行验证。
+当前 ONNX 推理实现显式使用 CPU Execution Provider；推理工程配置了 Windows x64、Linux x64/arm64 和 macOS x64/arm64 的 Tokenizers 原生运行时。跨平台发布与目标机运行仍需按相应 RID 验证。
 
 ## 文档
 
