@@ -33,6 +33,20 @@ public class ChatAssistant : IDisposable
         _currentConfig = null;
     }
 
+    public void RestoreHistory(IEnumerable<ChatTurn> turns, GenerationConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(turns);
+        ArgumentNullException.ThrowIfNull(config);
+        _memory.Replace(turns);
+        while (_memory.Count > config.MaxTurns)
+        {
+            _memory.RemoveOldestTurn();
+        }
+        _currentConfig = config;
+        TrimHistoryToTokenLimit(config.MaxHistoryTokens);
+        RebuildCacheFromHistory(config.SystemPrompt ?? _config.SystemPrompt);
+    }
+
     public AssistantResult Ask(
         string question,
         Scene? scene = null,
@@ -145,11 +159,16 @@ public class ChatAssistant : IDisposable
 
     private void TruncateHistory(int maxHistoryTokens)
     {
+        TrimHistoryToTokenLimit(maxHistoryTokens);
+        RebuildCacheFromHistory(_currentConfig?.SystemPrompt ?? _config.SystemPrompt);
+    }
+
+    private void TrimHistoryToTokenLimit(int maxHistoryTokens)
+    {
         while (_memory.Count > 0 && _engine.CountTokens(
                    _engine.FormatHistoryPrompt(_memory.Turns)) > maxHistoryTokens)
         {
             _memory.RemoveOldestTurn();
-            RebuildCacheFromHistory(_currentConfig?.SystemPrompt ?? _config.SystemPrompt);
         }
     }
 }
