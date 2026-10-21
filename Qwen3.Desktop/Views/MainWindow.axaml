@@ -1,0 +1,130 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Qwen3.Desktop.ViewModels"
+        xmlns:views="using:Qwen3.Desktop.Views"
+        x:Class="Qwen3.Desktop.Views.MainWindow"
+        x:CompileBindings="False"
+        Title="Qwen3 ONNX"
+        Width="1280" Height="840"
+        MinWidth="900" MinHeight="620"
+        WindowStartupLocation="CenterScreen">
+  <Window.DataTemplates>
+    <DataTemplate DataType="{x:Type vm:ChatPageViewModel}"><views:ChatView/></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:ModelsPageViewModel}"><views:ModelsView/></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:HistoryPageViewModel}"><views:ConversationManagementView/></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:UsersPageViewModel}"><views:UsersView/></DataTemplate>
+  </Window.DataTemplates>
+  <Grid ColumnDefinitions="Auto,*" Background="#F5F7FA">
+    <Border Width="{Binding SidebarWidth}" Background="#FFFFFF" Padding="12"
+            BorderBrush="#E4E7EC" BorderThickness="0,0,1,0">
+      <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto">
+        <Grid ColumnDefinitions="*,Auto" Margin="4,6,4,18">
+          <TextBlock Text="Qwen3" FontSize="21" FontWeight="Bold" Foreground="#175CD3"
+                     IsVisible="{Binding IsSidebarExpanded}"/>
+          <Button Grid.Column="1" Content="☰" Command="{Binding ToggleSidebarCommand}"
+                  Padding="8,5" Background="Transparent" BorderThickness="0" Foreground="#344054"/>
+        </Grid>
+        <Button Grid.Row="1" Command="{Binding NewConversationCommand}"
+                HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,7"
+                Background="#EFF8FF" Foreground="#175CD3" BorderBrush="#B2DDFF">
+          <StackPanel Orientation="Horizontal" Spacing="9">
+            <TextBlock Text="＋"/><TextBlock Text="新对话" IsVisible="{Binding IsSidebarExpanded}"/>
+          </StackPanel>
+        </Button>
+        <Button Grid.Row="2" Command="{Binding NavigateToCommand}" CommandParameter="Models"
+                HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,7"
+                Background="Transparent" Foreground="#344054" BorderThickness="0">
+          <StackPanel Orientation="Horizontal" Spacing="9">
+            <TextBlock Text="▦"/><TextBlock Text="模型管理" IsVisible="{Binding IsSidebarExpanded}"/>
+          </StackPanel>
+        </Button>
+        <Button Grid.Row="3" Command="{Binding NavigateToCommand}" CommandParameter="Conversations"
+                IsVisible="{Binding IsLoggedIn}" HorizontalContentAlignment="Left"
+                Padding="12,10" Margin="0,0,0,7" Background="Transparent"
+                Foreground="#344054" BorderThickness="0">
+          <StackPanel Orientation="Horizontal" Spacing="9">
+            <TextBlock Text="▤"/><TextBlock Text="管理我的对话" IsVisible="{Binding IsSidebarExpanded}"/>
+          </StackPanel>
+        </Button>
+        <TextBlock Grid.Row="4" Text="最近对话" Margin="8,10,4,4" FontSize="12"
+                   FontWeight="SemiBold" Foreground="#667085"
+                   IsVisible="{Binding IsSidebarExpanded}"/>
+        <ScrollViewer Grid.Row="5" IsVisible="{Binding IsSidebarExpanded}"
+                      VerticalScrollBarVisibility="Auto">
+          <ItemsControl ItemsSource="{Binding History.Groups}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Margin="4,8,0,4" Spacing="3">
+                  <TextBlock Text="{Binding Title}" Margin="5,0,0,4" FontSize="11"
+                             FontWeight="SemiBold" Foreground="#667085"/>
+                  <ItemsControl ItemsSource="{Binding Conversations}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Button Command="{Binding $parent[Window].DataContext.History.OpenConversationCommand}"
+                                CommandParameter="{Binding}" HorizontalContentAlignment="Left"
+                                Padding="9,8" Margin="0,1" Background="Transparent"
+                                Foreground="#344054" BorderThickness="0" MaxWidth="236"
+                                ToolTip.Tip="{Binding Title}">
+                          <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
+                        </Button>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+        <Button Grid.Row="6" Command="{Binding NavigateToCommand}" CommandParameter="Users"
+                IsVisible="{Binding IsAdmin}" HorizontalContentAlignment="Left"
+                Padding="12,10" Margin="0,0,0,7" Background="Transparent"
+                Foreground="#344054" BorderThickness="0">
+          <StackPanel Orientation="Horizontal" Spacing="9">
+            <TextBlock Text="⚙"/><TextBlock Text="用户管理" IsVisible="{Binding IsSidebarExpanded}"/>
+          </StackPanel>
+        </Button>
+        <StackPanel Grid.Row="7" Spacing="7">
+          <TextBlock Text="{Binding IdentityLabel}" Foreground="#475467" TextWrapping="Wrap"
+                     IsVisible="{Binding IsSidebarExpanded}"/>
+          <Button Content="登录 / 切换账户" Command="{Binding OpenAuthenticationCommand}"
+                  IsVisible="{Binding IsGuest}" Padding="10,8"/>
+          <Button Content="退出登录" Command="{Binding SignOutCommand}"
+                  IsVisible="{Binding IsLoggedIn}" Padding="10,8"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <ContentControl Grid.Column="1" Content="{Binding CurrentViewModel}" Margin="0"/>
+    <Border Grid.ColumnSpan="2" IsVisible="{Binding IsBootstrapNoticeVisible}"
+            Background="#990F172A" ZIndex="20">
+      <Border Width="520" Padding="28" CornerRadius="16" Background="White"
+              HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel Spacing="12">
+          <TextBlock Text="管理员账户已创建" FontSize="22" FontWeight="SemiBold"/>
+          <TextBlock Text="请立即保存此一次性密码。关闭提示后程序不会再次显示；数据库仅保存密码哈希。"
+                     TextWrapping="Wrap"/>
+          <TextBox Text="{Binding GeneratedAdminPassword}" IsReadOnly="True"/>
+          <TextBlock Text="用户名：admin" FontWeight="SemiBold"/>
+          <Button Content="我已保存，继续使用" Command="{Binding DismissBootstrapNoticeCommand}"
+                  HorizontalAlignment="Right" Padding="14,8"/>
+        </StackPanel>
+      </Border>
+    </Border>
+    <Border Grid.ColumnSpan="2" IsVisible="{Binding IsAuthenticationOpen}"
+            Background="#990F172A" ZIndex="30">
+      <Border Width="420" Padding="28" CornerRadius="16" Background="White"
+              HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="本地账户登录" FontSize="22" FontWeight="SemiBold"/>
+            <Button Grid.Column="1" Content="×" Command="{Binding CloseAuthenticationCommand}"/>
+          </Grid>
+          <TextBox Text="{Binding LoginUsername}" PlaceholderText="用户名"/>
+          <TextBox Text="{Binding LoginPassword}" PasswordChar="●" PlaceholderText="密码"/>
+          <TextBlock Text="{Binding StatusMessage}" Foreground="#B42318" TextWrapping="Wrap"/>
+          <Button Content="登录" Command="{Binding SignInCommand}"
+                  HorizontalAlignment="Right" Padding="18,8"/>
+        </StackPanel>
+      </Border>
+    </Border>
+  </Grid>
+</Window>

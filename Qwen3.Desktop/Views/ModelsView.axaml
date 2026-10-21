@@ -1,0 +1,134 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Qwen3.Desktop.Views.ModelsView"
+             x:CompileBindings="False">
+  <Grid Background="#F5F7FA">
+    <ScrollViewer>
+      <StackPanel Margin="30" Spacing="18">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="5">
+            <TextBlock Text="模型管理" FontSize="26" FontWeight="SemiBold" Foreground="#101828"/>
+            <TextBlock Text="管理本地模型和下载来源，支持 Git 克隆与逐文件 HTTP 备用下载。"
+                       Foreground="#667085" TextWrapping="Wrap"/>
+          </StackPanel>
+          <Button Grid.Column="1" Content="＋ 添加模型" Command="{Binding OpenNewModelEditorCommand}"
+                  IsVisible="{Binding IsAdmin}" VerticalAlignment="Center" Padding="16,9"/>
+        </Grid>
+        <Border Padding="14" Background="#EFF8FF" CornerRadius="10"
+                IsVisible="{Binding IsBusy}">
+          <StackPanel Spacing="8">
+            <TextBlock Text="{Binding StatusText}" Foreground="#175CD3" TextWrapping="Wrap"/>
+            <ProgressBar Minimum="0" Maximum="100" Value="{Binding DownloadProgress}"
+                         IsIndeterminate="{Binding IsDownloadIndeterminate}"/>
+          </StackPanel>
+        </Border>
+        <TextBlock Text="{Binding StatusText}" Foreground="#475467" TextWrapping="Wrap"
+                   IsVisible="{Binding IsNotBusy}"/>
+        <Border IsVisible="{Binding HasNoModels}" Padding="30" Background="White"
+                CornerRadius="14" BorderBrush="#E4E7EC" BorderThickness="1">
+          <StackPanel Spacing="8" HorizontalAlignment="Center">
+            <TextBlock Text="模型列表为空" FontSize="18" FontWeight="SemiBold"
+                       Foreground="#344054" HorizontalAlignment="Center"/>
+            <TextBlock Text="添加模型仓库或逐文件下载链接后即可安装。"
+                       Foreground="#667085" HorizontalAlignment="Center"/>
+          </StackPanel>
+        </Border>
+        <ItemsControl ItemsSource="{Binding Models}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Padding="18" Margin="0,0,0,12" Background="White" CornerRadius="14"
+                      BorderBrush="#E4E7EC" BorderThickness="1">
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="18"
+                             Foreground="#101828"/>
+                  <TextBlock Grid.Row="1" Text="{Binding Description}" Margin="0,6,16,0"
+                             TextWrapping="Wrap" Foreground="#667085"/>
+                  <StackPanel Grid.Row="2" Margin="0,10,16,0" Spacing="4">
+                    <TextBlock Text="{Binding RepositoryUrl, StringFormat='Git：{0}'}"
+                               FontSize="12" Foreground="#667085" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding HttpFileLinks.Count, StringFormat='HTTP 文件数：{0}'}"
+                               FontSize="12" Foreground="#667085"/>
+                    <TextBlock Text="{Binding IsInstalled, StringFormat='已安装：{0}'}"
+                               FontSize="12" Foreground="#475467"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Grid.RowSpan="3" Spacing="8"
+                              VerticalAlignment="Center">
+                    <Button Content="下载 / 安装"
+                            Command="{Binding $parent[UserControl].DataContext.DownloadModelCommand}"
+                            CommandParameter="{Binding}"
+                            IsEnabled="{Binding $parent[UserControl].DataContext.CanDownload}"/>
+                    <Button Content="编辑"
+                            Command="{Binding $parent[UserControl].DataContext.EditModelCommand}"
+                            CommandParameter="{Binding}"
+                            IsEnabled="{Binding $parent[UserControl].DataContext.CanDownload}"
+                            IsVisible="{Binding $parent[UserControl].DataContext.IsAdmin}"/>
+                    <Button Content="删除"
+                            Command="{Binding $parent[UserControl].DataContext.DeleteModelCommand}"
+                            CommandParameter="{Binding}"
+                            IsEnabled="{Binding $parent[UserControl].DataContext.CanDownload}"
+                            IsVisible="{Binding $parent[UserControl].DataContext.IsAdmin}"/>
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+    <Border IsVisible="{Binding IsEditorOpen}" Background="#990F172A"
+            HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ZIndex="20">
+      <Border Width="640" MaxHeight="760" Margin="20" Padding="26" Background="White"
+              CornerRadius="18" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <ScrollViewer>
+          <StackPanel Spacing="14">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="4">
+                <TextBlock Text="{Binding EditorTitle}" FontSize="22" FontWeight="SemiBold"
+                           Foreground="#101828"/>
+                <TextBlock Text="至少填写一种可用下载方式。"
+                           Foreground="#667085"/>
+              </StackPanel>
+              <Button Grid.Column="1" Content="×" Command="{Binding CloseEditorCommand}"
+                      IsEnabled="{Binding CanDownload}" Padding="9,5"/>
+            </Grid>
+            <TextBox Text="{Binding NewTitle}" PlaceholderText="模型标题"/>
+            <TextBox Text="{Binding NewEnglishName}" PlaceholderText="英文名称（用于本地目录）"/>
+            <TextBox Text="{Binding NewDescription}" PlaceholderText="模型描述"/>
+            <TextBox Text="{Binding NewRepositoryUrl}" PlaceholderText="Git clone 仓库 URL（可选）"/>
+            <TextBlock Text="HTTP 备用文件：每行填写 相对路径 | 下载 URL | 文件大小（可选） | SHA-256（可选）"
+                       Foreground="#667085" TextWrapping="Wrap"/>
+            <TextBox Text="{Binding NewHttpFileLinks}" AcceptsReturn="True" TextWrapping="Wrap"
+                     MinHeight="140"
+                     PlaceholderText="config.json | https://host/model/config.json&#10;tokenizer.json | https://host/model/tokenizer.json"/>
+            <TextBlock Text="{Binding StatusText}" Foreground="#B42318" TextWrapping="Wrap"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+              <Button Content="取消" Command="{Binding CancelEditCommand}" Padding="16,9"/>
+              <Button Content="保存" Command="{Binding RegisterModelCommand}"
+                      IsEnabled="{Binding CanDownload}" Padding="18,9"/>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Border>
+    <Border IsVisible="{Binding IsDeleteConfirmationOpen}" Background="#990F172A" ZIndex="30">
+      <Border Width="440" Margin="20" Padding="26" Background="White" CornerRadius="16"
+              HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel Spacing="14">
+          <TextBlock Text="确认删除模型？" FontSize="21" FontWeight="SemiBold"
+                     Foreground="#101828"/>
+          <TextBlock Text="{Binding ModelPendingDelete.Title}"
+                     Foreground="#475467" TextWrapping="Wrap"/>
+          <TextBlock Text="模型文件和目录记录将被移除。此操作不可撤销。"
+                     Foreground="#667085" TextWrapping="Wrap"/>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <Button Content="取消" Command="{Binding CancelDeleteCommand}"
+                    IsEnabled="{Binding CanDownload}" Padding="14,8"/>
+            <Button Content="确认删除" Command="{Binding ConfirmDeleteModelCommand}"
+                    IsEnabled="{Binding CanDownload}"
+                    Background="#D92D20" Foreground="White" Padding="14,8"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Border>
+  </Grid>
+</UserControl>

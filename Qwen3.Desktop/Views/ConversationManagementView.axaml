@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Qwen3.Desktop.Views.ConversationManagementView"
+             x:CompileBindings="False">
+  <Grid RowDefinitions="Auto,*" Background="#F5F7FA">
+    <Border Padding="28,22" Background="White" BorderBrush="#E4E7EC" BorderThickness="0,0,0,1">
+      <StackPanel Spacing="6">
+        <TextBlock Text="管理我的对话" FontSize="26" FontWeight="SemiBold" Foreground="#101828"/>
+        <TextBlock Text="仅显示当前登录账户拥有的对话，不会访问其他用户的私聊。"
+                   Foreground="#667085"/>
+      </StackPanel>
+    </Border>
+    <Grid Grid.Row="1" ColumnDefinitions="*,320" Margin="24" ColumnSpacing="18">
+      <Border Padding="18" Background="White" CornerRadius="14"
+              BorderBrush="#E4E7EC" BorderThickness="1">
+        <Grid RowDefinitions="Auto,*">
+          <TextBox Text="{Binding SearchText}" PlaceholderText="按对话标题搜索…" Margin="0,0,0,14"/>
+          <ScrollViewer Grid.Row="1">
+            <Grid>
+              <ItemsControl ItemsSource="{Binding FilteredConversations}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+                      <Button Content="{Binding Title}"
+                              Command="{Binding $parent[Window].DataContext.History.OpenConversationCommand}"
+                              CommandParameter="{Binding}" HorizontalContentAlignment="Left"
+                              Padding="12,10"/>
+                      <Button Grid.Column="1" Content="删除"
+                              Command="{Binding $parent[Window].DataContext.History.DeleteConversationCommand}"
+                              CommandParameter="{Binding}" Margin="8,0,0,0"/>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock IsVisible="{Binding HasNoFilteredConversations}"
+                         Text="没有找到对话。可调整搜索关键词，或先开始一段新对话。"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                         Foreground="#667085" TextWrapping="Wrap" Margin="24"/>
+            </Grid>
+          </ScrollViewer>
+        </Grid>
+      </Border>
+      <Border Grid.Column="1" Padding="18" Background="White" CornerRadius="14"
+              BorderBrush="#E4E7EC" BorderThickness="1">
+        <StackPanel Spacing="12">
+          <TextBlock Text="修改标题" FontSize="18" FontWeight="SemiBold" Foreground="#101828"/>
+          <TextBlock Text="{Binding SelectedConversation.Title}" TextWrapping="Wrap"
+                     Foreground="#667085"/>
+          <TextBox Text="{Binding TitleDraft}" MaxLength="120" PlaceholderText="输入新标题"/>
+          <Button Content="保存标题" Command="{Binding RenameSelectedCommand}"
+                  IsEnabled="{Binding CanEditSelected}" HorizontalAlignment="Left" Padding="14,8"/>
+          <TextBlock Text="{Binding StatusText}" Foreground="#475467" TextWrapping="Wrap"/>
+        </StackPanel>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

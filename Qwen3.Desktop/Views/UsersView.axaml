@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Qwen3.Desktop.Views.UsersView"
+             x:CompileBindings="False">
+  <ScrollViewer Background="#F5F7FA">
+    <StackPanel Margin="30" Spacing="18">
+      <TextBlock Text="本地账户管理" FontSize="26" FontWeight="SemiBold" Foreground="#101828"/>
+      <TextBlock Text="管理员可创建和锁定账户，并查看累计 token 用量；不会读取其他账户的对话内容。"
+                 Foreground="#667085" TextWrapping="Wrap"/>
+      <TextBlock Text="{Binding StatusText}" Foreground="#475467"/>
+      <Border Padding="20" Background="White" CornerRadius="14"
+              BorderBrush="#E4E7EC" BorderThickness="1">
+        <StackPanel Spacing="10">
+          <TextBlock Text="创建账户" FontSize="18" FontWeight="SemiBold" Foreground="#101828"/>
+          <TextBox Text="{Binding NewUsername}" PlaceholderText="用户名"/>
+          <TextBox Text="{Binding NewPassword}" PasswordChar="●"
+                   PlaceholderText="密码（至少 12 个字符）"/>
+          <Button Content="创建" Command="{Binding CreateUserCommand}"
+                  HorizontalAlignment="Left" Padding="14,8"/>
+        </StackPanel>
+      </Border>
+      <Border IsVisible="{Binding HasNoUsers}" Padding="24" Background="White" CornerRadius="14"
+              BorderBrush="#E4E7EC" BorderThickness="1">
+        <TextBlock Text="暂无普通用户账户。可在上方创建一个本地账户。"
+                   HorizontalAlignment="Center" Foreground="#667085" TextWrapping="Wrap"/>
+      </Border>
+      <ItemsControl ItemsSource="{Binding Users}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Padding="16" Margin="0,0,0,8" Background="White" CornerRadius="12"
+                    BorderBrush="#E4E7EC" BorderThickness="1">
+              <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                <StackPanel>
+                  <TextBlock Text="{Binding Username}" FontWeight="SemiBold" Foreground="#101828"/>
+                  <TextBlock Text="{Binding Role}" Foreground="#667085"/>
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{Binding TokensUsed, StringFormat='Tokens: {0}'}"
+                           VerticalAlignment="Center" Foreground="#475467"/>
+                <Button Grid.Column="2" Content="{Binding IsLocked, StringFormat='锁定状态：{0}'}"
+                        Command="{Binding $parent[Window].DataContext.Users.ToggleLockCommand}"
+                        CommandParameter="{Binding}" IsEnabled="{Binding CanBeLocked}"/>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
