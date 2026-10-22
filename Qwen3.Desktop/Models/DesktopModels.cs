@@ -64,7 +64,8 @@ public sealed record StoredMessage(
     string Content,
     IReadOnlyList<string> Attachments,
     int TokenCount,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    bool WasInterrupted = false);
 
 public sealed record ModelDownloadProgress(
     string Message,

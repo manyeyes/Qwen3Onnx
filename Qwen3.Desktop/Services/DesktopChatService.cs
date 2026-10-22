@@ -119,17 +119,42 @@ public sealed class DesktopChatService : IDisposable
             id, result.PromptTokens, result.HistoryTurns, result.Generation.TotalTokens,
             result.Generation.TotalTimeSeconds, result.Generation.TokensPerSecond);
 
-        cancellationToken.ThrowIfCancellationRequested();
-        if (firstTurn)
+        if (cancellationToken.IsCancellationRequested && !result.Generation.WasCancelled)
         {
-            var titleResult = await Task.Run(
-                () => _titleService.Generate(
-                    assistant, userText, result.Answer, modelConfig.SystemPrompt, cancellationToken),
-                cancellationToken);
-            title = titleResult;
+            result = result with
+            {
+                Generation = result.Generation with { WasCancelled = true }
+            };
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        if (firstTurn && !result.Generation.WasCancelled)
+        {
+            try
+            {
+                title = await Task.Run(
+                    () => _titleService.Generate(
+                        assistant, userText, result.Answer, modelConfig.SystemPrompt, cancellationToken),
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                result = result with
+                {
+                    Generation = result.Generation with { WasCancelled = true }
+                };
+            }
+        }
+
+        if (cancellationToken.IsCancellationRequested && !result.Generation.WasCancelled)
+        {
+            result = result with
+            {
+                Generation = result.Generation with { WasCancelled = true }
+            };
+        }
+        var saveToken = result.Generation.WasCancelled
+            ? CancellationToken.None
+            : cancellationToken;
         id = await _database.SaveTurnAsync(
             id,
             ownerUserId,
@@ -141,17 +166,18 @@ public sealed class DesktopChatService : IDisposable
             result.PromptTokens,
             result.Answer,
             result.Generation.TotalTokens,
-            cancellationToken);
-        if (firstTurn)
+            saveToken,
+            result.Generation.WasCancelled);
+        if (firstTurn && !result.Generation.WasCancelled)
         {
             var savedHistory = ToTurns(await _database.GetMessagesAsync(
-                id, ownerUserId, cancellationToken));
+                id, ownerUserId, saveToken));
             await Task.Run(
                 () => assistant.RestoreHistory(savedHistory, generationConfig),
-                cancellationToken);
+                saveToken);
         }
 
-        var conversation = await _database.GetConversationAsync(id, ownerUserId, cancellationToken)
+        var conversation = await _database.GetConversationAsync(id, ownerUserId, saveToken)
             ?? throw new InvalidOperationException("Conversation disappeared after saving the response.");
         return new ChatSendResult(conversation, result, promptText);
     }
@@ -208,11 +234,22 @@ public sealed class DesktopChatService : IDisposable
             },
             cancellationToken);
 
+        if (cancellationToken.IsCancellationRequested && !result.Generation.WasCancelled)
+        {
+            result = result with
+            {
+                Generation = result.Generation with { WasCancelled = true }
+            };
+        }
+        var saveToken = result.Generation.WasCancelled
+            ? CancellationToken.None
+            : cancellationToken;
         await _database.ReplaceAssistantReplyAsync(
             conversationId, ownerUserId, oldAssistantMessage.Id, result.Answer,
-            result.PromptTokens, result.Generation.TotalTokens, cancellationToken);
+            result.PromptTokens, result.Generation.TotalTokens, saveToken,
+            result.Generation.WasCancelled);
         var updatedConversation = await _database.GetConversationAsync(
-            conversationId, ownerUserId, cancellationToken)
+            conversationId, ownerUserId, saveToken)
             ?? throw new InvalidOperationException("Conversation disappeared after regenerating the response.");
         return new ChatSendResult(updatedConversation, result, userMessage.Content);
     }

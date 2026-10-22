@@ -20,32 +20,21 @@
       </Grid>
     </Border>
     <Grid Grid.Row="1" RowDefinitions="*,Auto">
-      <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <Grid>
           <ItemsControl ItemsSource="{Binding Messages}" Margin="30,24">
             <ItemsControl.ItemTemplate>
               <DataTemplate>
-                <Border Margin="0,0,0,16" Padding="18,14" CornerRadius="14"
-                        Background="White" BorderBrush="#EAECF0" BorderThickness="1">
-                  <StackPanel Spacing="8">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Text="{Binding DisplayRole}" FontSize="12" FontWeight="Bold"
-                                 Foreground="#667085" VerticalAlignment="Center"/>
-                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                        <Button Content="复制" Command="{Binding $parent[UserControl].DataContext.CopyMessageCommand}"
-                                CommandParameter="{Binding}" Padding="9,4"/>
-                        <Button Content="重新发送"
-                                Command="{Binding $parent[UserControl].DataContext.ResendMessageCommand}"
-                                CommandParameter="{Binding}" IsVisible="{Binding IsUser}"
-                                IsEnabled="{Binding $parent[UserControl].DataContext.CanChangeConversation}"
-                                Padding="9,4"/>
-                        <Button Content="重新生成回复"
-                                Command="{Binding $parent[UserControl].DataContext.RegenerateReplyCommand}"
-                                CommandParameter="{Binding}" IsVisible="{Binding CanRegenerate}"
-                                IsEnabled="{Binding $parent[UserControl].DataContext.CanChangeConversation}"
-                                Padding="9,4"/>
-                      </StackPanel>
-                    </Grid>
+                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,18">
+                  <StackPanel Grid.Column="{Binding BubbleColumn}" 
+                              Grid.ColumnSpan="{Binding BubbleColumnSpan}"
+                              Spacing="5"
+                              MaxWidth="{Binding BubbleMaxWidth}" 
+                              HorizontalAlignment="{Binding BubbleAlignment}"
+                              Margin="{Binding BubbleMargin}">
+                    <Border Padding="18,14" CornerRadius="14"
+                            Background="White" BorderBrush="#EAECF0" BorderThickness="1">
+                      <StackPanel Spacing="8">
                     <Border IsVisible="{Binding HasThinking}" Padding="10,8"
                             Background="#F8FAFC" BorderBrush="#EAECF0" BorderThickness="1"
                             CornerRadius="8">
@@ -60,8 +49,8 @@
                                       VerticalScrollBarVisibility="Hidden"
                                       HorizontalScrollBarVisibility="Disabled"
                                       ScrollChanged="ThinkingScrollViewer_OnScrollChanged">
-                          <TextBlock Text="{Binding ThinkingContent}" TextWrapping="Wrap"
-                                     FontSize="13" Foreground="#667085"/>
+                          <SelectableTextBlock Text="{Binding ThinkingContent}" TextWrapping="Wrap"
+                                               FontSize="13" Foreground="#667085"/>
                         </ScrollViewer>
                         <StackPanel Orientation="Horizontal" Spacing="8"
                                     IsVisible="{Binding IsPending}">
@@ -72,15 +61,52 @@
                         </StackPanel>
                       </StackPanel>
                     </Border>
-                    <TextBlock Text="{Binding StreamingAnswer}" TextWrapping="Wrap"
-                               FontSize="15" Foreground="#344054"
-                               IsVisible="{Binding IsPending}"/>
+                    <SelectableTextBlock Text="{Binding Content}" TextWrapping="Wrap"
+                                         FontSize="15" Foreground="#344054"
+                                         IsVisible="{Binding IsUser}"/>
+                    <SelectableTextBlock Text="{Binding StreamingAnswer}" TextWrapping="Wrap"
+                                         FontSize="15" Foreground="#344054"
+                                         IsVisible="{Binding IsPending}"/>
+                    <SelectableTextBlock Text="{Binding MarkdownContent}" TextWrapping="Wrap"
+                                         FontSize="15" Foreground="#344054"
+                                         IsVisible="{Binding IsTextSelectionMode}"/>
                     <md:MarkdownScrollViewer Markdown="{Binding MarkdownContent}"
-                                             IsVisible="{Binding IsNotPending}"/>
+                                             IsVisible="{Binding IsMarkdownVisible}"/>
+                    <Border IsVisible="{Binding WasInterrupted}" Padding="8,5"
+                            Background="#FFFAEB" CornerRadius="6" HorizontalAlignment="Left">
+                      <TextBlock Text="{Binding InterruptionLabel}" FontSize="12"
+                                 Foreground="#B54708"/>
+                    </Border>
                     <TextBlock Text="{Binding AttachmentsText}" FontSize="12" Foreground="#667085"
                                IsVisible="{Binding HasAttachments}"/>
+                      </StackPanel>
+                    </Border>
+                    <StackPanel Orientation="Horizontal" Spacing="2"
+                                HorizontalAlignment="{Binding BubbleAlignment}">
+                      <Button Content="⧉" ToolTip.Tip="复制消息"
+                              Command="{Binding $parent[UserControl].DataContext.CopyMessageCommand}"
+                              CommandParameter="{Binding}" Padding="8,4" FontSize="15"
+                              Background="Transparent" BorderThickness="0" Foreground="#667085"/>
+                      <Button Content="{Binding SelectionModeGlyph}"
+                              ToolTip.Tip="{Binding SelectionModeTooltip}"
+                              Command="{Binding ToggleTextSelectionModeCommand}"
+                              IsVisible="{Binding IsAssistant}" Padding="8,4" FontSize="15"
+                              Background="Transparent" BorderThickness="0" Foreground="#667085"/>
+                      <Button Content="↗" ToolTip.Tip="重新发送"
+                              Command="{Binding $parent[UserControl].DataContext.ResendMessageCommand}"
+                              CommandParameter="{Binding}" IsVisible="{Binding IsUser}"
+                              IsEnabled="{Binding $parent[UserControl].DataContext.CanChangeConversation}"
+                              Padding="8,4" FontSize="15" Background="Transparent"
+                              BorderThickness="0" Foreground="#667085"/>
+                      <Button Content="↻" ToolTip.Tip="重新生成回复"
+                              Command="{Binding $parent[UserControl].DataContext.RegenerateReplyCommand}"
+                              CommandParameter="{Binding}" IsVisible="{Binding CanRegenerate}"
+                              IsEnabled="{Binding $parent[UserControl].DataContext.CanChangeConversation}"
+                              Padding="8,4" FontSize="15" Background="Transparent"
+                              BorderThickness="0" Foreground="#667085"/>
+                    </StackPanel>
                   </StackPanel>
-                </Border>
+                </Grid>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
@@ -134,29 +160,83 @@
         </StackPanel>
       </Border>
       <Border IsVisible="{Binding IsAdvancedOpen}" Grid.RowSpan="2" Background="#990F172A"
-              HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ZIndex="10">
-        <Border Width="560" MaxHeight="680" Padding="26" Background="White" CornerRadius="16"
-                HorizontalAlignment="Center" VerticalAlignment="Center">
-          <ScrollViewer>
-            <StackPanel Spacing="13">
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="生成参数" FontSize="22" FontWeight="SemiBold" Foreground="#101828"/>
-                <Button Grid.Column="1" Content="关闭" Command="{Binding CloseAdvancedCommand}"/>
-              </Grid>
-              <TextBlock Text="输出长度"/><NumericUpDown Value="{Binding MaxNewTokens}" Minimum="1" Maximum="8192"/>
-              <TextBlock Text="温度"/><NumericUpDown Value="{Binding Temperature}" Minimum="0" Maximum="2" Increment="0.05"/>
-              <TextBlock Text="Top P"/><NumericUpDown Value="{Binding TopP}" Minimum="0" Maximum="1" Increment="0.05"/>
-              <TextBlock Text="Top K"/><NumericUpDown Value="{Binding TopK}" Minimum="0" Maximum="200"/>
-              <TextBlock Text="重复惩罚"/><NumericUpDown Value="{Binding RepetitionPenalty}" Minimum="0.1" Maximum="2" Increment="0.05"/>
-              <TextBlock Text="思考预算"/><NumericUpDown Value="{Binding ThinkingBudget}" Minimum="0" Maximum="8192"/>
-              <TextBlock Text="历史轮数"/><NumericUpDown Value="{Binding MaxHistoryTurns}" Minimum="0" Maximum="20"/>
-              <CheckBox Content="启用采样" IsChecked="{Binding DoSample}"/>
-              <CheckBox Content="流式显示输出" IsChecked="{Binding StreamOutput}"/>
-              <Button Content="完成" Command="{Binding CloseAdvancedCommand}" HorizontalAlignment="Right"/>
-            </StackPanel>
-          </ScrollViewer>
-        </Border>
+        HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ZIndex="10">
+  <Border Width="560" MaxHeight="680" Background="White" CornerRadius="16"
+          BoxShadow="0 24 64 0 #33101828"
+          HorizontalAlignment="Center" VerticalAlignment="Center">
+    <Grid RowDefinitions="Auto,*,Auto">
+
+      <!-- ===== 头部：固定 ===== -->
+      <Border Grid.Row="0" Padding="24,20,16,16"
+              BorderBrush="#EAECF0" BorderThickness="0,0,0,1">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="4" VerticalAlignment="Center">
+            <TextBlock Text="生成参数" FontSize="18" FontWeight="SemiBold" Foreground="#101828"/>
+            <TextBlock Text="调整当前对话的生成行为，修改将应用于后续消息。"
+                       FontSize="12" Foreground="#667085" TextWrapping="Wrap"/>
+          </StackPanel>
+          <Button Grid.Column="1" Content="×" Command="{Binding CloseAdvancedCommand}"
+                  Width="32" Height="32" Padding="0" FontSize="18"
+                  Background="Transparent" BorderThickness="0" Foreground="#667085"
+                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                  VerticalAlignment="Top" ToolTip.Tip="关闭"/>
+        </Grid>
       </Border>
+
+      <!-- ===== 内容：滚动 ===== -->
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="24,20,20,20" Spacing="18">
+
+          <Grid ColumnDefinitions="120,*" ColumnSpacing="16"
+                RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
+            <TextBlock Text="输出长度" VerticalAlignment="Center" FontSize="13" Foreground="#344054"/>
+            <NumericUpDown Grid.Column="1" Value="{Binding MaxNewTokens}" Minimum="1" Maximum="8192"/>
+
+            <TextBlock Grid.Row="1" Text="温度" VerticalAlignment="Center" FontSize="13" Foreground="#344054"/>
+            <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding Temperature}" Minimum="0" Maximum="2" Increment="0.05"/>
+
+            <TextBlock Grid.Row="2" Text="Top P" VerticalAlignment="Center" FontSize="13" Foreground="#344054"/>
+            <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding TopP}" Minimum="0" Maximum="1" Increment="0.05"/>
+
+            <TextBlock Grid.Row="3" Text="Top K" VerticalAlignment="Center" FontSize="13" Foreground="#344054"/>
+            <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding TopK}" Minimum="0" Maximum="200"/>
+
+            <TextBlock Grid.Row="4" Text="重复惩罚" VerticalAlignment="Center" FontSize="13" Foreground="#344054"/>
+            <NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding RepetitionPenalty}" Minimum="0.1" Maximum="2" Increment="0.05"/>
+
+            <TextBlock Grid.Row="5" Text="思考预算" VerticalAlignment="Center" FontSize="13" Foreground="#344054"/>
+            <NumericUpDown Grid.Row="5" Grid.Column="1" Value="{Binding ThinkingBudget}" Minimum="0" Maximum="8192"/>
+
+            <TextBlock Grid.Row="6" Text="历史轮数" VerticalAlignment="Center" FontSize="13" Foreground="#344054"/>
+            <NumericUpDown Grid.Row="6" Grid.Column="1" Value="{Binding MaxHistoryTurns}" Minimum="0" Maximum="20"/>
+          </Grid>
+
+          <Border Height="1" Background="#F2F4F7"/>
+
+          <StackPanel Spacing="10">
+            <CheckBox Content="启用采样" IsChecked="{Binding DoSample}"/>
+            <CheckBox Content="流式显示输出" IsChecked="{Binding StreamOutput}"/>
+          </StackPanel>
+
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- ===== 脚部：固定 ===== -->
+      <Border Grid.Row="2" Padding="24,14,24,16"
+              BorderBrush="#EAECF0" BorderThickness="0,1,0,0"
+              Background="#F9FAFB" CornerRadius="0,0,16,16">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+          <Button Content="取消" Command="{Binding CloseAdvancedCommand}" Padding="18,8"
+                  Background="Transparent" BorderBrush="#D0D5DD" Foreground="#344054"/>
+          <Button Content="完成" Command="{Binding CloseAdvancedCommand}" Padding="22,8"
+                  Background="#175CD3" Foreground="White" BorderThickness="0"/>
+        </StackPanel>
+      </Border>
+
+    </Grid>
+  </Border>
+</Border>
     </Grid>
   </Grid>
 </UserControl>

@@ -14,11 +14,12 @@
     <DataTemplate DataType="{x:Type vm:HistoryPageViewModel}"><views:ConversationManagementView/></DataTemplate>
     <DataTemplate DataType="{x:Type vm:UsersPageViewModel}"><views:UsersView/></DataTemplate>
     <DataTemplate DataType="{x:Type vm:ProfilePageViewModel}"><views:ProfileView/></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:AboutPageViewModel}"><views:AboutView/></DataTemplate>
   </Window.DataTemplates>
   <Grid ColumnDefinitions="Auto,*" Background="#F5F7FA">
     <Border Width="{Binding SidebarWidth}" Background="#FFFFFF" Padding="12"
             BorderBrush="#E4E7EC" BorderThickness="0,0,1,0">
-      <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto">
+      <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
         <Grid ColumnDefinitions="*,Auto" Margin="4,6,4,18">
           <TextBlock Text="Qwen3" FontSize="21" FontWeight="Bold" Foreground="#175CD3"
                      IsVisible="{Binding IsSidebarExpanded}"/>
@@ -39,26 +40,10 @@
             <TextBlock Text="▦"/><TextBlock Text="模型管理" IsVisible="{Binding IsSidebarExpanded}"/>
           </StackPanel>
         </Button>
-        <Button Grid.Row="3" Command="{Binding NavigateToCommand}" CommandParameter="Conversations"
-                IsVisible="{Binding IsLoggedIn}" HorizontalContentAlignment="Left"
-                Padding="12,10" Margin="0,0,0,7" Background="Transparent"
-                Foreground="#344054" BorderThickness="0">
-          <StackPanel Orientation="Horizontal" Spacing="9">
-            <TextBlock Text="▤"/><TextBlock Text="管理我的对话" IsVisible="{Binding IsSidebarExpanded}"/>
-          </StackPanel>
-        </Button>
-        <Button Grid.Row="4" Command="{Binding NavigateToCommand}" CommandParameter="Profile"
-                IsVisible="{Binding IsLoggedIn}" HorizontalContentAlignment="Left"
-                Padding="12,10" Margin="0,0,0,7" Background="Transparent"
-                Foreground="#344054" BorderThickness="0">
-          <StackPanel Orientation="Horizontal" Spacing="9">
-            <TextBlock Text="◉"/><TextBlock Text="用户中心" IsVisible="{Binding IsSidebarExpanded}"/>
-          </StackPanel>
-        </Button>
-        <TextBlock Grid.Row="5" Text="最近对话" Margin="8,10,4,4" FontSize="12"
+        <TextBlock Grid.Row="3" Text="最近对话" Margin="8,10,4,4" FontSize="12"
                    FontWeight="SemiBold" Foreground="#667085"
                    IsVisible="{Binding IsSidebarExpanded}"/>
-        <ScrollViewer Grid.Row="6" IsVisible="{Binding IsSidebarExpanded}"
+        <ScrollViewer Grid.Row="4" IsVisible="{Binding IsSidebarExpanded}"
                       VerticalScrollBarVisibility="Auto">
           <ItemsControl ItemsSource="{Binding History.Groups}">
             <ItemsControl.ItemTemplate>
@@ -84,21 +69,85 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
         </ScrollViewer>
-        <Button Grid.Row="7" Command="{Binding NavigateToCommand}" CommandParameter="Users"
-                IsVisible="{Binding IsAdmin}" HorizontalContentAlignment="Left"
-                Padding="12,10" Margin="0,0,0,7" Background="Transparent"
-                Foreground="#344054" BorderThickness="0">
-          <StackPanel Orientation="Horizontal" Spacing="9">
-            <TextBlock Text="⚙"/><TextBlock Text="用户管理" IsVisible="{Binding IsSidebarExpanded}"/>
-          </StackPanel>
-        </Button>
-        <StackPanel Grid.Row="8" Spacing="7">
-          <TextBlock Text="{Binding IdentityLabel}" Foreground="#475467" TextWrapping="Wrap"
-                     IsVisible="{Binding IsSidebarExpanded}"/>
-          <Button Content="登录 / 切换账户" Command="{Binding OpenAuthenticationCommand}"
-                  IsVisible="{Binding IsGuest}" Padding="10,8"/>
-          <Button Content="退出登录" Command="{Binding SignOutCommand}"
-                  IsVisible="{Binding IsLoggedIn}" Padding="10,8"/>
+        <StackPanel Grid.Row="5" Spacing="8" HorizontalAlignment="Stretch">
+          <Border x:Name="BottomMenuBorder" IsVisible="{Binding IsBottomMenuOpen}" Padding="7" Background="#FFFFFF"
+                  CornerRadius="13" BorderBrush="#E4E7EC" BorderThickness="1"
+                  HorizontalAlignment="Stretch">
+            <StackPanel Spacing="3" HorizontalAlignment="Stretch">
+              <Button Command="{Binding NavigateToCommand}" CommandParameter="Conversations"
+                      IsVisible="{Binding IsLoggedIn}" HorizontalContentAlignment="Left"
+                      Background="Transparent" BorderThickness="0" Padding="10,9"
+                      Foreground="#344054">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <TextBlock Text="▤"/><TextBlock Text="管理我的对话" IsVisible="{Binding IsSidebarExpanded}"/>
+                </StackPanel>
+              </Button>
+              <Button Command="{Binding NavigateToCommand}" CommandParameter="Profile"
+                      IsVisible="{Binding IsLoggedIn}" HorizontalContentAlignment="Left"
+                      Background="Transparent" BorderThickness="0" Padding="10,9"
+                      Foreground="#344054">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <TextBlock Text="◉"/><TextBlock Text="用户中心" IsVisible="{Binding IsSidebarExpanded}"/>
+                </StackPanel>
+              </Button>
+              <Button Command="{Binding NavigateToCommand}" CommandParameter="Users"
+                      IsVisible="{Binding IsAdmin}" HorizontalContentAlignment="Left"
+                      Background="Transparent" BorderThickness="0" Padding="10,9"
+                      Foreground="#344054">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <TextBlock Text="⚙"/><TextBlock Text="用户管理" IsVisible="{Binding IsSidebarExpanded}"/>
+                </StackPanel>
+              </Button>
+              <Button Command="{Binding OpenAuthenticationCommand}" IsVisible="{Binding IsGuest}"
+                      HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                      Padding="10,9" Foreground="#344054">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <TextBlock Text="⇥"/><TextBlock Text="登录 / 注册" IsVisible="{Binding IsSidebarExpanded}"/>
+                </StackPanel>
+              </Button>
+              <Button Command="{Binding OpenWebsiteCommand}" HorizontalContentAlignment="Left"
+                      Background="Transparent" BorderThickness="0" Padding="10,9"
+                      Foreground="#344054">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <TextBlock Text="↗"/><TextBlock Text="官网" IsVisible="{Binding IsSidebarExpanded}"/>
+                </StackPanel>
+              </Button>
+              <Button Command="{Binding OpenAboutPageCommand}" HorizontalContentAlignment="Left"
+                      Background="Transparent" BorderThickness="0" Padding="10,9"
+                      Foreground="#344054">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <TextBlock Text="ⓘ"/><TextBlock Text="关于" IsVisible="{Binding IsSidebarExpanded}"/>
+                </StackPanel>
+              </Button>
+              <Button Command="{Binding SignOutCommand}" IsVisible="{Binding IsLoggedIn}"
+                      HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                      Padding="10,9" Foreground="#B42318">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <TextBlock Text="⇤"/><TextBlock Text="退出登录" IsVisible="{Binding IsSidebarExpanded}"/>
+                </StackPanel>
+              </Button>
+            </StackPanel>
+          </Border>
+          <Button x:Name="BottomMenuButton" Command="{Binding ToggleBottomMenuCommand}" Padding="10,10"
+                  HorizontalAlignment="Stretch"
+                  Background="#F9FAFB" BorderBrush="#E4E7EC" CornerRadius="10"
+                  HorizontalContentAlignment="Stretch">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9">
+              <Border Width="30" Height="30" CornerRadius="15" Background="#EFF8FF">
+                <TextBlock Text="{Binding IdentityInitial}" FontSize="14" FontWeight="SemiBold"
+                           Foreground="#175CD3" HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+              </Border>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center"
+                          IsVisible="{Binding IsSidebarExpanded}">
+                <TextBlock Text="{Binding IdentityLabel}" FontSize="12" FontWeight="SemiBold"
+                           Foreground="#344054" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="账户与更多" FontSize="11" Foreground="#667085"/>
+              </StackPanel>
+              <TextBlock Grid.Column="2" Text="{Binding BottomMenuGlyph}"
+                         Foreground="#667085" VerticalAlignment="Center"/>
+            </Grid>
+          </Button>
         </StackPanel>
       </Grid>
     </Border>

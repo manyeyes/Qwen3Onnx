@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Qwen3.Desktop.Views.AboutView"
+             x:CompileBindings="False">
+  <Grid Background="#F5F7FA">
+    <ScrollViewer>
+      <StackPanel MaxWidth="760" Margin="32" Spacing="20"
+                  HorizontalAlignment="Center">
+        <StackPanel Spacing="5">
+          <TextBlock Text="关于" FontSize="26" FontWeight="SemiBold" Foreground="#101828"/>
+          <TextBlock Text="应用信息与项目介绍" Foreground="#667085"/>
+        </StackPanel>
+        <Border Padding="28" Background="White" CornerRadius="18"
+                BorderBrush="#E4E7EC" BorderThickness="1">
+          <StackPanel Spacing="14">
+            <Border Width="68" Height="68" CornerRadius="16" Background="#EFF8FF"
+                    HorizontalAlignment="Left">
+              <TextBlock Text="Q" FontSize="38" FontWeight="Bold" Foreground="#175CD3"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <TextBlock Text="{Binding ApplicationName}" FontSize="28"
+                       FontWeight="SemiBold" Foreground="#101828"/>
+            <TextBlock Text="{Binding Description}" FontSize="16" Foreground="#475467"
+                       TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding ProductDetails}" Foreground="#667085"
+                       TextWrapping="Wrap"/>
+            <Border Margin="0,4,0,0" Padding="16" Background="#F9FAFB" CornerRadius="12">
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="Auto,*">
+                  <TextBlock Text="应用版本" Foreground="#667085"/>
+                  <TextBlock Grid.Column="1" Text="{Binding Version}" Margin="18,0,0,0"
+                             Foreground="#344054"/>
+                </Grid>
+                <Grid ColumnDefinitions="Auto,*">
+                  <TextBlock Text=".NET Runtime" Foreground="#667085"/>
+                  <TextBlock Grid.Column="1" Text="{Binding RuntimeVersion}" Margin="18,0,0,0"
+                             Foreground="#344054"/>
+                </Grid>
+              </StackPanel>
+            </Border>
+            <TextBlock Text="{Binding Copyright}" Foreground="#98A2B3"/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

@@ -114,7 +114,6 @@ public class ChatAssistant : IDisposable
         }
 
         var (answer, generationStats) = _engine.Generate(prompt, config, onToken, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
         var repetitionDetected = false;
         if (config.EnableRepetitionCheck)
         {
@@ -138,7 +137,14 @@ public class ChatAssistant : IDisposable
                 historyAnswer = TextUtilities.SanitizeRoleplay(historyAnswer);
             }
             _memory.AddTurn(cleanedQuestion, historyAnswer, config.MaxTurns, config.MaxHistoryChars);
-            TruncateHistory(config.MaxHistoryTokens);
+            if (generationStats.WasCancelled)
+            {
+                TrimHistoryToTokenLimit(config.MaxHistoryTokens);
+            }
+            else
+            {
+                TruncateHistory(config.MaxHistoryTokens);
+            }
         }
 
         return new AssistantResult(answer, generationStats, promptTokenCount, _memory.Count,

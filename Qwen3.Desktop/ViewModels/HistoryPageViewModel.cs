@@ -180,11 +180,11 @@ public partial class HistoryPageViewModel : ObservableObject
         var groups = new List<HistoryGroupViewModel>();
         if (recent.Any())
         {
-            groups.Add(new HistoryGroupViewModel("最近 7 天", recent));
+            groups.Add(new HistoryGroupViewModel("7 天内", recent));
         }
         if (lastMonth.Any())
         {
-            groups.Add(new HistoryGroupViewModel("最近 30 天", lastMonth));
+            groups.Add(new HistoryGroupViewModel("30 天内", lastMonth));
         }
         groups.AddRange(older);
         return new ObservableCollection<HistoryGroupViewModel>(groups);
