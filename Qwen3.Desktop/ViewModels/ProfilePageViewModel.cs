@@ -23,6 +23,9 @@ public partial class ProfilePageViewModel : ObservableObject
     private ObservableCollection<UserDomainInsight> domains = [];
 
     [ObservableProperty]
+    private ObservableCollection<KeywordCloudItem> keywordCloudItems = [];
+
+    [ObservableProperty]
     private string nickname = string.Empty;
 
     [ObservableProperty]
@@ -62,12 +65,10 @@ public partial class ProfilePageViewModel : ObservableObject
         ? Profile?.Username[..1].ToUpperInvariant() ?? "?"
         : Profile.Nickname[..1].ToUpperInvariant();
 
-    public string KeywordSummary => Insights is null || Insights.Keywords.Count == 0
-        ? "对话积累后，这里会显示你常关注的关键词。"
-        : string.Join("  ·  ", Insights.Keywords);
-
     public bool CanDeleteAccount => Profile?.Role != "admin";
     public bool HasNoDomainInsights => Domains.Count == 0;
+    public bool HasNoKeywordInsights => KeywordCloudItems.Count == 0;
+    public bool HasKeywordInsights => KeywordCloudItems.Count > 0;
     public bool IsNotBusy => !IsBusy;
     public string AccountType => Profile?.Role == "admin" ? "管理员" : "普通用户";
 
@@ -88,6 +89,9 @@ public partial class ProfilePageViewModel : ObservableObject
             Profile = null;
             Insights = null;
             Domains.Clear();
+            KeywordCloudItems.Clear();
+            OnPropertyChanged(nameof(HasNoKeywordInsights));
+            OnPropertyChanged(nameof(HasKeywordInsights));
             return;
         }
 
@@ -106,11 +110,45 @@ public partial class ProfilePageViewModel : ObservableObject
         BlogUrl = loadedProfile.BlogUrl;
         Bio = loadedProfile.Bio;
         Domains = new ObservableCollection<UserDomainInsight>(loadedInsights.Domains);
+        var maxKeywordCount = loadedInsights.Keywords.Count == 0
+            ? 1
+            : loadedInsights.Keywords.Max(keyword => keyword.Count);
+        var palette = new[]
+        {
+            ("#175CD3", "#EFF8FF"),
+            ("#6941C6", "#F4F3FF"),
+            ("#027A48", "#ECFDF3"),
+            ("#B54708", "#FFFAEB"),
+            ("#C11574", "#FDF2FA")
+        };
+        KeywordCloudItems = new ObservableCollection<KeywordCloudItem>(
+            loadedInsights.Keywords.Select((keyword, index) =>
+            {
+                var intensity = keyword.Count / (double)maxKeywordCount;
+                var colors = palette[index % palette.Length];
+                return new KeywordCloudItem(
+                    keyword.Term,
+                    keyword.Count,
+                    13 + 11 * intensity,
+                    colors.Item1,
+                    colors.Item2);
+            }));
         OnPropertyChanged(nameof(Initials));
-        OnPropertyChanged(nameof(KeywordSummary));
         OnPropertyChanged(nameof(CanDeleteAccount));
         OnPropertyChanged(nameof(HasNoDomainInsights));
+        OnPropertyChanged(nameof(HasNoKeywordInsights));
+        OnPropertyChanged(nameof(HasKeywordInsights));
         OnPropertyChanged(nameof(AccountType));
+    }
+
+    public sealed record KeywordCloudItem(
+        string Term,
+        int Count,
+        double FontSize,
+        string Foreground,
+        string Background)
+    {
+        public string FrequencyLabel => $"出现 {Count} 次";
     }
 
     [RelayCommand]

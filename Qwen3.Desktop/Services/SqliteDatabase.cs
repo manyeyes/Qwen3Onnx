@@ -14,7 +14,10 @@ public sealed class SqliteDatabase
         "the", "and", "for", "with", "that", "this", "from", "have", "what", "when", "where",
         "how", "why", "which", "would", "could", "should", "about", "your", "you", "are",
         "是", "的", "了", "我", "你", "他", "她", "它", "这", "那", "什么", "怎么", "如何",
-        "可以", "请问", "一个", "一下", "以及", "进行", "帮助", "帮我", "是否"
+        "可以", "请问", "一个", "一下", "以及", "进行", "帮助", "帮我", "是否", "请", "请帮",
+        "然后", "因为", "所以", "但是", "如果", "通过", "使用", "这个", "那个", "我们", "他们",
+        "已经", "需要", "现在", "这里", "其中", "相关", "内容", "回答", "问题", "告诉", "说明",
+        "解释", "提供", "实现", "一个", "一些", "怎样", "为何", "能否", "是否可以"
     };
 
     private static readonly (string Name, string[] Terms)[] InsightDomains =
@@ -103,6 +106,7 @@ public sealed class SqliteDatabase
                     title TEXT NOT NULL,
                     owner_user_id TEXT NULL REFERENCES users(id) ON DELETE CASCADE,
                     model_id TEXT NOT NULL REFERENCES models(id),
+                    is_pinned INTEGER NOT NULL DEFAULT 0,
                     created_utc TEXT NOT NULL,
                     updated_utc TEXT NOT NULL
                 );
@@ -137,10 +141,11 @@ public sealed class SqliteDatabase
         await EnsureModelDownloadColumnAsync(connection, cancellationToken);
         await EnsureUserProfileColumnsAsync(connection, cancellationToken);
         await EnsureInterruptedMessageColumnAsync(connection, cancellationToken);
+        await EnsureConversationPinnedColumnAsync(connection, cancellationToken);
         await using (var versionCommand = connection.CreateCommand())
         {
             versionCommand.CommandText =
-                "UPDATE app_metadata SET value = '4' WHERE key = 'schema_version';";
+                "UPDATE app_metadata SET value = '5' WHERE key = 'schema_version';";
             await versionCommand.ExecuteNonQueryAsync(cancellationToken);
         }
         await SeedModelsAsync(connection, cancellationToken);
@@ -301,6 +306,28 @@ public sealed class SqliteDatabase
         }
     }
 
+    public async Task SetConversationPinnedAsync(
+        string conversationId,
+        string? ownerUserId,
+        bool isPinned,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE conversations SET is_pinned = $pinned
+            WHERE id = $id AND
+                (($owner IS NULL AND owner_user_id IS NULL) OR owner_user_id = $owner);
+            """;
+        command.Parameters.AddWithValue("$pinned", isPinned ? 1 : 0);
+        command.Parameters.AddWithValue("$id", conversationId);
+        command.Parameters.AddWithValue("$owner", (object?)ownerUserId ?? DBNull.Value);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new UnauthorizedAccessException("Conversation does not exist or is not accessible to this user.");
+        }
+    }
+
     public async Task DeleteModelAsync(string modelId, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -362,12 +389,11 @@ public sealed class SqliteDatabase
             validate.CommandText = """
                 SELECT EXISTS(
                     SELECT 1 FROM conversations
-                    WHERE id = $id AND model_id = $model AND
+                    WHERE id = $id AND
                         (($owner IS NULL AND owner_user_id IS NULL) OR owner_user_id = $owner)
                 );
                 """;
             validate.Parameters.AddWithValue("$id", id);
-            validate.Parameters.AddWithValue("$model", modelId);
             validate.Parameters.AddWithValue("$owner", (object?)ownerUserId ?? DBNull.Value);
             if (Convert.ToInt64(await validate.ExecuteScalarAsync(cancellationToken)) == 0)
             {
@@ -413,9 +439,11 @@ public sealed class SqliteDatabase
         {
             update.Transaction = (SqliteTransaction)transaction;
             update.CommandText = """
-                UPDATE conversations SET title = CASE WHEN $set_title = 1 THEN $title ELSE title END,
+                UPDATE conversations SET model_id = $model,
+                    title = CASE WHEN $set_title = 1 THEN $title ELSE title END,
                     updated_utc = $updated WHERE id = $id;
                 """;
+            update.Parameters.AddWithValue("$model", modelId);
             update.Parameters.AddWithValue("$updated", now);
             update.Parameters.AddWithValue("$id", id);
             update.Parameters.AddWithValue("$title", title);
@@ -524,7 +552,7 @@ public sealed class SqliteDatabase
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, title, owner_user_id, model_id, created_utc, updated_utc
+            SELECT id, title, owner_user_id, model_id, created_utc, updated_utc, is_pinned
             FROM conversations WHERE id = $id AND
                 (($owner IS NULL AND owner_user_id IS NULL) OR owner_user_id = $owner);
             """;
@@ -540,10 +568,10 @@ public sealed class SqliteDatabase
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, title, owner_user_id, model_id, created_utc, updated_utc
+            SELECT id, title, owner_user_id, model_id, created_utc, updated_utc, is_pinned
             FROM conversations
             WHERE ($owner IS NULL AND owner_user_id IS NULL) OR owner_user_id = $owner
-            ORDER BY updated_utc DESC;
+            ORDER BY is_pinned DESC, updated_utc DESC;
             """;
         command.Parameters.AddWithValue("$owner", (object?)ownerUserId ?? DBNull.Value);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -792,7 +820,7 @@ public sealed class SqliteDatabase
         messagesCommand.CommandText = """
             SELECT m.content FROM messages m
             JOIN conversations c ON c.id = m.conversation_id
-            WHERE c.owner_user_id = $id AND m.role = 'user'
+            WHERE c.owner_user_id = $id AND m.role IN ('user', 'assistant')
             ORDER BY m.created_utc DESC;
             """;
         messagesCommand.Parameters.AddWithValue("$id", userId);
@@ -803,9 +831,7 @@ public sealed class SqliteDatabase
             text.AppendLine(messagesReader.GetString(0));
         }
 
-        var terms = Regex.Matches(text.ToString(), @"[\p{IsCJKUnifiedIdeographs}]{2,}|[A-Za-z][A-Za-z0-9+#.-]{2,}")
-            .Select(match => match.Value.Trim('.', '-', '+', '#'))
-            .Where(term => term.Length > 1 && !InsightStopWords.Contains(term))
+        var terms = ExtractInsightTerms(text.ToString())
             .GroupBy(term => term, StringComparer.OrdinalIgnoreCase)
             .Select(group => (Term: group.Key, Count: group.Count()))
             .OrderByDescending(item => item.Count)
@@ -826,9 +852,43 @@ public sealed class SqliteDatabase
             conversationCount,
             messageCount,
             tokensUsed,
-            terms.Take(12).Select(term => term.Term).ToArray(),
+            terms.Take(20).Select(term => new UserKeywordInsight(term.Term, term.Count)).ToArray(),
             domains.Select(domain => new UserDomainInsight(
                 domain.Name, domain.Count, domain.Count * 100.0 / domainTotal)).ToArray());
+    }
+
+    private static IEnumerable<string> ExtractInsightTerms(string text)
+    {
+        foreach (Match match in Regex.Matches(
+                     text, @"[\p{IsCJKUnifiedIdeographs}]+|[A-Za-z][A-Za-z0-9+#.-]*"))
+        {
+            var token = match.Value.Trim('.', '-', '+', '#');
+            if (token.Length == 0)
+            {
+                continue;
+            }
+
+            if (token.Any(char.IsAsciiLetter))
+            {
+                if (token.Length >= 3 && !InsightStopWords.Contains(token))
+                {
+                    yield return token;
+                }
+                continue;
+            }
+
+            for (var length = 2; length <= Math.Min(4, token.Length); length++)
+            {
+                for (var start = 0; start <= token.Length - length; start++)
+                {
+                    var term = token.Substring(start, length);
+                    if (!InsightStopWords.Contains(term))
+                    {
+                        yield return term;
+                    }
+                }
+            }
+        }
     }
 
     public async Task DeleteOwnAccountAsync(
@@ -1048,6 +1108,33 @@ public sealed class SqliteDatabase
         await migration.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task EnsureConversationPinnedColumnAsync(
+        SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info(conversations);";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var exists = false;
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (string.Equals(reader.GetString(1), "is_pinned", StringComparison.OrdinalIgnoreCase))
+            {
+                exists = true;
+                break;
+            }
+        }
+        await reader.DisposeAsync();
+        if (exists)
+        {
+            return;
+        }
+
+        await using var migration = connection.CreateCommand();
+        migration.CommandText =
+            "ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;";
+        await migration.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private async Task<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
     {
         var connection = new SqliteConnection(_connectionString);
@@ -1068,7 +1155,8 @@ public sealed class SqliteDatabase
 
     private static ConversationSummary ReadConversation(SqliteDataReader reader) =>
         new(reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2),
-            reader.GetString(3), DateTimeOffset.Parse(reader.GetString(4)), DateTimeOffset.Parse(reader.GetString(5)));
+            reader.GetString(3), DateTimeOffset.Parse(reader.GetString(4)),
+            DateTimeOffset.Parse(reader.GetString(5)), reader.GetInt64(6) != 0);
 
     private static string SanitizeModelDirectoryName(string value)
     {

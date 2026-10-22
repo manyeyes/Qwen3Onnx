@@ -74,6 +74,44 @@ public sealed class SqliteDatabaseTests
     }
 
     [TestMethod]
+    public async Task GuestCanRenamePinAndDeleteConversation()
+    {
+        var model = (await _database.GetModelsAsync(_cancellationToken))[0];
+        var conversationId = await SaveTurnAsync(null, model.Id, "guest-manage");
+
+        await _database.RenameConversationAsync(
+                conversationId, null, "Guest renamed", _cancellationToken);
+        await _database.SetConversationPinnedAsync(
+                conversationId, null, true, _cancellationToken);
+        var pinned = (await _database.GetConversationsAsync(null, _cancellationToken)).Single();
+        Assert.AreEqual("Guest renamed", pinned.Title);
+        Assert.IsTrue(pinned.IsPinned);
+
+        await _database.DeleteConversationAsync(conversationId, null, _cancellationToken);
+        Assert.AreEqual(0, (await _database.GetConversationsAsync(null, _cancellationToken)).Count);
+    }
+
+    [TestMethod]
+    public async Task SavingNextTurnWithDifferentModelKeepsConversationIdentity()
+    {
+        var models = await _database.GetModelsAsync(_cancellationToken);
+        var conversationId = await _database.SaveTurnAsync(
+                null, null, models[0].Id, "Keep this chat", true,
+                "first question", [], 2, "first answer", 3, _cancellationToken);
+
+        var continuedId = await _database.SaveTurnAsync(
+                conversationId, null, models[1].Id, "Keep this chat", false,
+                "second question", [], 2, "second answer", 3, _cancellationToken);
+
+        Assert.AreEqual(conversationId, continuedId);
+        var updated = await _database.GetConversationAsync(conversationId, null, _cancellationToken);
+        Assert.IsNotNull(updated);
+        Assert.AreEqual(models[1].Id, updated.ModelId);
+        Assert.AreEqual(4, (await _database.GetMessagesAsync(
+                conversationId, null, _cancellationToken)).Count);
+    }
+
+    [TestMethod]
     public async Task UsersCanManageTheirOwnProfilePasswordAndAccount()
     {
         const string initialPassword = "initial-password-123";
@@ -113,6 +151,22 @@ public sealed class SqliteDatabaseTests
             "profile-user", updatedPassword, _cancellationToken));
         await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(() =>
             _database.GetUserProfileAsync(userId, _cancellationToken));
+    }
+
+    [TestMethod]
+    public async Task UserInsightsCountKeywordsAcrossQuestionsAndAnswers()
+    {
+        var userId = await _database.CreateUserAsync(
+            "keyword-user", "secure-password-123", _cancellationToken);
+        var model = (await _database.GetModelsAsync(_cancellationToken))[0];
+        await _database.SaveTurnAsync(
+            null, userId, model.Id, "关键词统计", true,
+            "人工智能", [], 3,
+            "人工智能，量子计算。", 6, _cancellationToken);
+
+        var insights = await _database.GetOwnUserInsightsAsync(userId, _cancellationToken);
+        Assert.AreEqual(2, insights.Keywords.Single(keyword => keyword.Term == "人工智能").Count);
+        Assert.AreEqual(1, insights.Keywords.Single(keyword => keyword.Term == "量子").Count);
     }
 
     [TestMethod]
@@ -325,12 +379,21 @@ public sealed class SqliteDatabaseTests
     {
         using var services = new DesktopServices(_temporaryDirectory);
         await services.Database.InitializeAsync(_cancellationToken);
-        var model = (await services.Database.GetModelsAsync(_cancellationToken))[0];
-        Directory.CreateDirectory(model.LocalPath);
-        await File.WriteAllTextAsync(Path.Combine(model.LocalPath, "config.json"), "{}", _cancellationToken);
-        await File.WriteAllTextAsync(Path.Combine(model.LocalPath, "tokenizer.json"), "{}", _cancellationToken);
-        await File.WriteAllBytesAsync(Path.Combine(model.LocalPath, model.EmbeddingFileName), [1]);
-        await File.WriteAllBytesAsync(Path.Combine(model.LocalPath, model.DecoderFileName), [2]);
+        var models = await services.Database.GetModelsAsync(_cancellationToken);
+        var model = models[0];
+        var alternativeModel = models[1];
+        foreach (var installedModel in new[] { model, alternativeModel })
+        {
+            Directory.CreateDirectory(installedModel.LocalPath);
+            await File.WriteAllTextAsync(
+                Path.Combine(installedModel.LocalPath, "config.json"), "{}", _cancellationToken);
+            await File.WriteAllTextAsync(
+                Path.Combine(installedModel.LocalPath, "tokenizer.json"), "{}", _cancellationToken);
+            await File.WriteAllBytesAsync(
+                Path.Combine(installedModel.LocalPath, installedModel.EmbeddingFileName), [1]);
+            await File.WriteAllBytesAsync(
+                Path.Combine(installedModel.LocalPath, installedModel.DecoderFileName), [2]);
+        }
 
         var conversationId = await services.Database.SaveTurnAsync(
             null, null, model.Id, "Saved conversation", true,
@@ -343,10 +406,13 @@ public sealed class SqliteDatabaseTests
         await shell.Initialization;
         await shell.Chat.LoadConversationAsync(conversation, null, _cancellationToken);
         await shell.Chat.RefreshModelsAsync(_cancellationToken);
+        shell.Chat.SelectedModel = shell.Chat.InstalledModels.Single(
+            item => item.Id == alternativeModel.Id);
 
         Assert.AreEqual(conversationId, shell.Chat.ConversationId);
         Assert.AreEqual(2, shell.Chat.Messages.Count);
         Assert.IsFalse(shell.Chat.HasNoMessages);
+        StringAssert.Contains(shell.Chat.StatusText, "继续保存在当前对话");
     }
 
     [TestMethod]
@@ -546,6 +612,44 @@ public sealed class SqliteDatabaseTests
             hasInterruptedColumn |= reader.GetString(1) == "was_interrupted";
         }
         Assert.IsTrue(hasInterruptedColumn);
+    }
+
+    [TestMethod]
+    public async Task ExistingConversationTableGetsPinnedStateMigration()
+    {
+        var legacyDirectory = Path.Combine(_temporaryDirectory, "legacy-conversation-db");
+        Directory.CreateDirectory(legacyDirectory);
+        var legacyPath = Path.Combine(legacyDirectory, "qwen3-desktop.sqlite3");
+        await using (var connection = new SqliteConnection($"Data Source={legacyPath}"))
+        {
+            await connection.OpenAsync(_cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE conversations (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    owner_user_id TEXT NULL,
+                    model_id TEXT NOT NULL,
+                    created_utc TEXT NOT NULL,
+                    updated_utc TEXT NOT NULL
+                );
+                """;
+            await command.ExecuteNonQueryAsync(_cancellationToken);
+        }
+
+        var legacyDatabase = new SqliteDatabase(legacyDirectory);
+        await legacyDatabase.InitializeAsync(_cancellationToken);
+        await using var migratedConnection = new SqliteConnection($"Data Source={legacyPath}");
+        await migratedConnection.OpenAsync(_cancellationToken);
+        await using var columns = migratedConnection.CreateCommand();
+        columns.CommandText = "PRAGMA table_info(conversations);";
+        await using var reader = await columns.ExecuteReaderAsync(_cancellationToken);
+        var hasPinnedColumn = false;
+        while (await reader.ReadAsync(_cancellationToken))
+        {
+            hasPinnedColumn |= reader.GetString(1) == "is_pinned";
+        }
+        Assert.IsTrue(hasPinnedColumn);
     }
 
     private async Task<string> SaveTurnAsync(string? ownerId, string modelId, string content) =>

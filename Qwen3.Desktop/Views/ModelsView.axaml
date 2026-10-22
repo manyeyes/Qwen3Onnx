@@ -2,18 +2,20 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Qwen3.Desktop.Views.ModelsView"
              x:CompileBindings="False">
-  <Grid Background="#F5F7FA">
-    <ScrollViewer>
-      <StackPanel Margin="30" Spacing="18">
-        <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Spacing="5">
-            <TextBlock Text="模型管理" FontSize="26" FontWeight="SemiBold" Foreground="#101828"/>
-            <TextBlock Text="管理本地模型和下载来源，支持 Git 克隆与逐文件 HTTP 备用下载。"
-                       Foreground="#667085" TextWrapping="Wrap"/>
-          </StackPanel>
-          <Button Grid.Column="1" Content="＋ 添加模型" Command="{Binding OpenNewModelEditorCommand}"
-                  IsVisible="{Binding IsAdmin}" VerticalAlignment="Center" Padding="16,9"/>
-        </Grid>
+  <Grid Background="#F5F7FA" RowDefinitions="Auto,*">
+    <Border Padding="26,20" Background="White" BorderBrush="#E4E7EC" BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="18">
+        <StackPanel Spacing="5" VerticalAlignment="Center">
+          <TextBlock Text="模型管理" FontSize="25" FontWeight="SemiBold" Foreground="#101828"/>
+          <TextBlock Text="管理本地模型和下载来源，支持 Git 克隆与逐文件 HTTP 备用下载。"
+                     Foreground="#667085" TextWrapping="Wrap"/>
+        </StackPanel>
+        <Button Grid.Column="1" Content="＋ 添加模型" Command="{Binding OpenNewModelEditorCommand}"
+                IsVisible="{Binding IsAdmin}" VerticalAlignment="Center" Padding="16,9"/>
+      </Grid>
+    </Border>
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="26" Spacing="18">
         <Border Padding="14" Background="#EFF8FF" CornerRadius="10"
                 IsVisible="{Binding IsBusy}">
           <StackPanel Spacing="8">
@@ -36,7 +38,7 @@
         <ItemsControl ItemsSource="{Binding Models}">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <Border Padding="18" Margin="0,0,0,12" Background="White" CornerRadius="14"
+              <Border Padding="20" Margin="0,0,0,12" Background="White" CornerRadius="14"
                       BorderBrush="#E4E7EC" BorderThickness="1">
                 <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
                   <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="18"
@@ -48,8 +50,11 @@
                                FontSize="12" Foreground="#667085" TextWrapping="Wrap"/>
                     <TextBlock Text="{Binding HttpFileLinks.Count, StringFormat='HTTP 文件数：{0}'}"
                                FontSize="12" Foreground="#667085"/>
-                    <TextBlock Text="{Binding IsInstalled, StringFormat='已安装：{0}'}"
-                               FontSize="12" Foreground="#475467"/>
+                    <Border Padding="9,4" CornerRadius="12" Background="#F2F4F7"
+                            HorizontalAlignment="Left">
+                      <TextBlock Text="{Binding InstallationStatus}" FontSize="12"
+                                 FontWeight="SemiBold" Foreground="#344054"/>
+                    </Border>
                   </StackPanel>
                   <StackPanel Grid.Column="1" Grid.RowSpan="3" Spacing="8"
                               VerticalAlignment="Center">
@@ -75,7 +80,7 @@
         </ItemsControl>
       </StackPanel>
     </ScrollViewer>
-    <Border IsVisible="{Binding IsEditorOpen}" Background="#990F172A"
+    <Border Grid.Row="0" Grid.RowSpan="2" IsVisible="{Binding IsEditorOpen}" Background="#990F172A"
             HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ZIndex="20">
       <Border Width="640" MaxHeight="760" Margin="20" Padding="26" Background="White"
               CornerRadius="18" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -110,7 +115,8 @@
         </ScrollViewer>
       </Border>
     </Border>
-    <Border IsVisible="{Binding IsDeleteConfirmationOpen}" Background="#990F172A" ZIndex="30">
+    <Border Grid.Row="0" Grid.RowSpan="2" IsVisible="{Binding IsDeleteConfirmationOpen}"
+            Background="#990F172A" ZIndex="30">
       <Border Width="440" Margin="20" Padding="26" Background="White" CornerRadius="16"
               HorizontalAlignment="Center" VerticalAlignment="Center">
         <StackPanel Spacing="14">

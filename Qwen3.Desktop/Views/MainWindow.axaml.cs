@@ -13,6 +13,9 @@ public sealed partial class MainWindow : Window
 {
     private Border? _bottomMenuBorder;
     private Button? _bottomMenuButton;
+    private IPointer? _resizePointer;
+    private double _resizeStartX;
+    private double _resizeStartWidth;
 
     public MainWindow()
     {
@@ -24,6 +27,8 @@ public sealed partial class MainWindow : Window
 
         // 隧道阶段拦截，先于按钮 Click 执行
         AddHandler(PointerPressedEvent, OnWindowPointerPressed, RoutingStrategies.Tunnel);
+        AddHandler(PointerMovedEvent, OnSidebarResizePointerMoved, RoutingStrategies.Bubble);
+        AddHandler(PointerReleasedEvent, OnSidebarResizePointerReleased, RoutingStrategies.Bubble);
         // 键盘 Tab 移出焦点时兜底
         AddHandler(GotFocusEvent, OnWindowGotFocus, RoutingStrategies.Bubble);
         // 窗口失活（切到其他程序、最小化等）时收起
@@ -37,6 +42,45 @@ public sealed partial class MainWindow : Window
                 viewModel.Chat.CopyTextAsync = CopyTextAsync;
             }
         };
+    }
+
+    private void SidebarResizeHandle_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel || !viewModel.IsSidebarExpanded ||
+            !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        _resizePointer = e.Pointer;
+        _resizeStartX = e.GetPosition(this).X;
+        _resizeStartWidth = viewModel.SidebarWidth;
+        e.Pointer.Capture(this);
+        e.Handled = true;
+    }
+
+    private void OnSidebarResizePointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (!ReferenceEquals(_resizePointer, e.Pointer) ||
+            DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        viewModel.SetSidebarWidth(_resizeStartWidth + e.GetPosition(this).X - _resizeStartX);
+        e.Handled = true;
+    }
+
+    private void OnSidebarResizePointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!ReferenceEquals(_resizePointer, e.Pointer))
+        {
+            return;
+        }
+
+        e.Pointer.Capture(null);
+        _resizePointer = null;
+        e.Handled = true;
     }
 
     private void OnWindowPointerPressed(object? sender, PointerPressedEventArgs e)
