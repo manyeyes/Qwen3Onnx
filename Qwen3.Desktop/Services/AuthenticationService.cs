@@ -17,4 +17,30 @@ public sealed class AuthenticationService(SqliteDatabase database)
 
     public Task SetLockedAsync(string userId, bool locked, CancellationToken cancellationToken = default) =>
         database.SetUserLockedAsync(userId, locked, cancellationToken);
+
+    public Task<UserProfile> GetProfileAsync(string userId, CancellationToken cancellationToken = default) =>
+        database.GetUserProfileAsync(userId, cancellationToken);
+
+    public Task UpdateProfileAsync(
+        string userId,
+        string nickname,
+        string avatarUrl,
+        string birthday,
+        string blogUrl,
+        string bio,
+        CancellationToken cancellationToken = default) =>
+        database.UpdateUserProfileAsync(
+            userId, nickname, avatarUrl, birthday, blogUrl, bio, cancellationToken);
+
+    public Task<UserInsights> GetInsightsAsync(string userId, CancellationToken cancellationToken = default) =>
+        database.GetOwnUserInsightsAsync(userId, cancellationToken);
+
+    public Task ChangePasswordAsync(
+        string userId, string currentPassword, string newPassword,
+        CancellationToken cancellationToken = default) =>
+        database.ChangeOwnPasswordAsync(userId, currentPassword, newPassword, cancellationToken);
+
+    public Task DeleteOwnAccountAsync(
+        string userId, string password, CancellationToken cancellationToken = default) =>
+        database.DeleteOwnAccountAsync(userId, password, cancellationToken);
 }

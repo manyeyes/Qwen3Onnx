@@ -1,24 +1,44 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-  </PropertyGroup>
+		<PropertyGroup>
+				<OutputType>WinExe</OutputType>
+				<TargetFramework>net8.0</TargetFramework>
+				<ImplicitUsings>enable</ImplicitUsings>
+				<Nullable>enable</Nullable>
+				<AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Qwen3.Inference\Qwen3.Inference.csproj" />
-  </ItemGroup>
+				<!-- 基础元信息 -->
+				<AssemblyName>Qwen3.Desktop</AssemblyName>
+				<RootNamespace>Qwen3.Desktop</RootNamespace>
+				<Title>Qwen3 Desktop</Title>
+				<Description>Avalonia-based cross-platform desktop UI for Qwen3 ONNX inference</Description>
+				<Authors>manyeyes and contributors</Authors>
+				<Version>0.2.0</Version>
+				<AssemblyVersion>0.2.0.0</AssemblyVersion>
+				<FileVersion>0.2.0.0</FileVersion>
+				<Copyright>Copyright © manyeyes and contributors 2026</Copyright>
+				<RepositoryUrl>https://github.com/manyeyes/Qwen3Onnx</RepositoryUrl>
+				<RepositoryType>git</RepositoryType>
 
-  <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.1.4" />
-    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
-    <PackageReference Include="Markdown.Avalonia.Tight" Version="12.0.0-a3" />
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />  
-  </ItemGroup>
+				<!-- Avalonia & 发布预设，避免裁剪坑（ONNX原生库） -->
+				<UseAppHost>true</UseAppHost>
+				<PublishSingleFile>false</PublishSingleFile>
+				<SelfContained>false</SelfContained>
+				<EnableTrim>false</EnableTrim>
+				<TrimMode>partial</TrimMode>
+		</PropertyGroup>
+
+		<ItemGroup>
+				<ProjectReference Include="..\Qwen3.Inference\Qwen3.Inference.csproj" />
+		</ItemGroup>
+
+		<ItemGroup>
+				<PackageReference Include="Avalonia" Version="12.1.4" />
+				<PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+				<PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+				<PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+				<PackageReference Include="Markdown.Avalonia.Tight" Version="12.0.0-a3" />
+				<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+				<PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+				<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
+		</ItemGroup>
 </Project>

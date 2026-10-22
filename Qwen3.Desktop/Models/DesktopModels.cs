@@ -11,6 +11,27 @@ public sealed record UserAccount(
     public bool CanBeLocked => Role != "admin";
 }
 
+public sealed record UserProfile(
+    string UserId,
+    string Username,
+    string Nickname,
+    string AvatarUrl,
+    string Birthday,
+    string BlogUrl,
+    string Bio,
+    string Role,
+    DateTimeOffset CreatedAt,
+    long TokensUsed);
+
+public sealed record UserDomainInsight(string Name, int Count, double Percentage);
+
+public sealed record UserInsights(
+    int ConversationCount,
+    int MessageCount,
+    long TokensUsed,
+    IReadOnlyList<string> Keywords,
+    IReadOnlyList<UserDomainInsight> Domains);
+
 public sealed record ModelDefinition(
     string Id,
     string Title,

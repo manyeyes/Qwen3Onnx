@@ -126,7 +126,10 @@
             <TextBlock Grid.Column="3" Text="{Binding StatusText}" VerticalAlignment="Center"
                        Margin="12,0" Foreground="#667085" TextTrimming="CharacterEllipsis"/>
             <Button Grid.Column="4" Content="发送" Command="{Binding SendCommand}" Padding="22,8"
-                    IsEnabled="{Binding CanSend}"/>
+                    IsVisible="{Binding CanShowSend}" IsEnabled="{Binding CanSend}"/>
+            <Button Grid.Column="4" Content="停止" Command="{Binding StopGenerationCommand}"
+                    IsVisible="{Binding CanStop}" Background="#D92D20" Foreground="White"
+                    Padding="22,8"/>
           </Grid>
         </StackPanel>
       </Border>
