@@ -26,6 +26,7 @@ public partial class ChatPageViewModel : ObservableObject
     private readonly ILogger<ChatPageViewModel> _logger;
     private readonly List<(string Name, string Content)> _attachments = [];
     private bool _syncing;
+    private CancellationTokenSource? _generationCancellation;
 
     [ObservableProperty]
     private string inputText = string.Empty;
@@ -89,6 +90,8 @@ public partial class ChatPageViewModel : ObservableObject
 
     public Action? ConversationsChanged { get; set; }
     public bool CanSend => !IsBusy && (SelectedModel?.IsInstalled ?? false);
+    public bool CanStop => IsBusy;
+    public bool CanShowSend => !IsBusy;
     public bool CanChangeConversation => !IsBusy;
     public bool HasNoMessages => Messages.Count == 0;
     public Func<string, Task>? CopyTextAsync { get; set; }
@@ -334,6 +337,8 @@ public partial class ChatPageViewModel : ObservableObject
         }
 
         var oldContent = message.Content;
+        using var generationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _generationCancellation = generationCancellation;
         IsBusy = true;
         message.Content = string.Empty;
         message.IsPending = true;
@@ -349,7 +354,7 @@ public partial class ChatPageViewModel : ObservableObject
                 SelectedModel,
                 BuildGenerationConfig(),
                 streamUpdater.Append,
-                cancellationToken);
+                generationCancellation.Token);
             elapsed.Stop();
             streamUpdater.Complete(result.Assistant.Answer);
             message.IsPending = false;
@@ -359,14 +364,25 @@ public partial class ChatPageViewModel : ObservableObject
         }
         catch (Exception exception)
         {
-            _logger.LogError(exception, "Desktop chat reply regeneration failed");
+            if (exception is OperationCanceledException && generationCancellation.IsCancellationRequested)
+            {
+                StatusText = "已停止生成，原回复已保留。";
+            }
+            else
+            {
+                _logger.LogError(exception, "Desktop chat reply regeneration failed");
+                StatusText = $"重新生成失败，原回复已保留：{exception.Message}";
+            }
             streamUpdater.Stop();
             message.Content = oldContent;
             message.IsPending = false;
-            StatusText = $"重新生成失败，原回复已保留：{exception.Message}";
         }
         finally
         {
+            if (ReferenceEquals(_generationCancellation, generationCancellation))
+            {
+                _generationCancellation = null;
+            }
             IsBusy = false;
             OnPropertyChanged(nameof(CanSend));
         }
@@ -391,6 +407,9 @@ public partial class ChatPageViewModel : ObservableObject
             StatusText = $"复制失败：{exception.Message}";
         }
     }
+
+    [RelayCommand(CanExecute = nameof(CanStop))]
+    private void StopGeneration() => _generationCancellation?.Cancel();
 
     private async Task SendMessageAsync(
         string text,
@@ -418,6 +437,8 @@ public partial class ChatPageViewModel : ObservableObject
             ? attachments.Select(item => item.Name).ToArray()
             : attachmentNamesOverride.ToArray();
         var config = BuildGenerationConfig();
+        using var generationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _generationCancellation = generationCancellation;
         if (clearComposer)
         {
             InputText = string.Empty;
@@ -452,7 +473,7 @@ public partial class ChatPageViewModel : ObservableObject
                 attachments.Select(item => item.Content).ToArray(),
                 config,
                 streamUpdater.Append,
-                cancellationToken,
+                generationCancellation.Token,
                 promptTextOverride);
 
             elapsed.Stop();
@@ -467,7 +488,17 @@ public partial class ChatPageViewModel : ObservableObject
         }
         catch (Exception exception)
         {
-            _logger.LogError(exception, "Desktop chat generation or persistence failed");
+            var canceled = exception is OperationCanceledException &&
+                generationCancellation.IsCancellationRequested;
+            if (canceled)
+            {
+                StatusText = "已停止生成，本轮对话未保存。";
+            }
+            else
+            {
+                _logger.LogError(exception, "Desktop chat generation or persistence failed");
+                StatusText = $"本次请求失败：{exception.Message}";
+            }
             streamUpdater.Stop();
             Messages.Remove(userMessage);
             Messages.Remove(assistantMessage);
@@ -481,10 +512,13 @@ public partial class ChatPageViewModel : ObservableObject
                 }
             }
             UpdateLatestAssistantAction();
-            StatusText = $"本次请求失败：{exception.Message}";
         }
         finally
         {
+            if (ReferenceEquals(_generationCancellation, generationCancellation))
+            {
+                _generationCancellation = null;
+            }
             IsBusy = false;
             OnPropertyChanged(nameof(CanSend));
         }
@@ -520,8 +554,11 @@ public partial class ChatPageViewModel : ObservableObject
     partial void OnIsBusyChanged(bool value)
     {
         OnPropertyChanged(nameof(CanSend));
+        OnPropertyChanged(nameof(CanShowSend));
+        OnPropertyChanged(nameof(CanStop));
         OnPropertyChanged(nameof(CanChangeConversation));
         _shell.OnChatBusyChanged();
+        StopGenerationCommand.NotifyCanExecuteChanged();
     }
 
     private GenerationConfig BuildGenerationConfig() =>

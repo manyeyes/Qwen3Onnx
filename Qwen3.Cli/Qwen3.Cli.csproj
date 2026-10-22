@@ -1,19 +1,37 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+		<PropertyGroup>
+				<OutputType>Exe</OutputType>
+				<TargetFramework>net8.0</TargetFramework>
+				<ImplicitUsings>enable</ImplicitUsings>
+				<Nullable>enable</Nullable>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Qwen3.Inference\Qwen3.Inference.csproj" />
-  </ItemGroup>
+				<!-- 基础包元信息 -->
+				<AssemblyName>Qwen3.Cli</AssemblyName>
+				<RootNamespace>Qwen3.Cli</RootNamespace>
+				<Title>Qwen3 CLI Inference Tool</Title>
+				<Description>Command-line inference tool for Qwen3 ONNX model, based on Qwen3.Inference</Description>
+				<Authors>manyeyes and contributors</Authors>
+				<Version>0.2.0</Version>
+				<AssemblyVersion>0.2.0.0</AssemblyVersion>
+				<FileVersion>0.2.0.0</FileVersion>
+				<Copyright>Copyright © manyeyes and contributors 2026</Copyright>
+				<RepositoryUrl>https://github.com/manyeyes/Qwen3Onnx</RepositoryUrl>
+				<RepositoryType>git</RepositoryType>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
-    <PackageReference Include="System.CommandLine" Version="2.0.13" />
-  </ItemGroup>
+				<!-- 发布相关优化 -->
+				<PublishSingleFile>false</PublishSingleFile>
+				<SelfContained>false</SelfContained>
+				<TrimMode>partial</TrimMode>
+				<EnableTrim>false</EnableTrim>
+				<UseAppHost>true</UseAppHost>
+		</PropertyGroup>
 
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+		<ItemGroup>
+				<ProjectReference Include="..\Qwen3.Inference\Qwen3.Inference.csproj" />
+		</ItemGroup>
 
+		<ItemGroup>
+				<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
+				<PackageReference Include="System.CommandLine" Version="2.0.13" />
+		</ItemGroup>
 </Project>

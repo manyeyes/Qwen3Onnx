@@ -33,6 +33,15 @@ public partial class MainWindowViewModel : ObservableObject
     private string loginPassword = string.Empty;
 
     [ObservableProperty]
+    private string registerPassword = string.Empty;
+
+    [ObservableProperty]
+    private string registerConfirmPassword = string.Empty;
+
+    [ObservableProperty]
+    private bool isRegisterMode;
+
+    [ObservableProperty]
     private string statusMessage = string.Empty;
 
     [ObservableProperty]
@@ -42,12 +51,17 @@ public partial class MainWindowViewModel : ObservableObject
     public HistoryPageViewModel History { get; }
     public ModelsPageViewModel Models { get; }
     public UsersPageViewModel Users { get; }
+    public ProfilePageViewModel Profile { get; }
     public Task Initialization { get; }
     public bool IsAdmin => CurrentUser?.Role == "admin";
     public bool IsGuest => CurrentUser is null;
     public bool IsLoggedIn => CurrentUser is not null;
+    public bool IsLoginMode => !IsRegisterMode;
     public bool CanChangeIdentity => !Chat.IsBusy;
     public string IdentityLabel => CurrentUser is null ? "访客模式" : $"账户：{CurrentUser.Username}";
+    public string AuthenticationTitle => IsRegisterMode ? "创建本地账户" : "本地账户登录";
+    public string AuthenticationSubmitText => IsRegisterMode ? "注册并登录" : "登录";
+    public string AuthenticationToggleText => IsRegisterMode ? "已有账户？返回登录" : "没有账户？立即注册";
     public double SidebarWidth => IsSidebarExpanded ? 250 : 72;
 
     public MainWindowViewModel(DesktopServices services, BootstrapResult bootstrap)
@@ -58,6 +72,7 @@ public partial class MainWindowViewModel : ObservableObject
         History = new HistoryPageViewModel(services, this);
         Models = new ModelsPageViewModel(services, this);
         Users = new UsersPageViewModel(services, this);
+        Profile = new ProfilePageViewModel(services, this);
         CurrentViewModel = Chat;
         GeneratedAdminPassword = bootstrap.GeneratedAdminPassword;
         IsBootstrapNoticeVisible = GeneratedAdminPassword is not null;
@@ -85,6 +100,10 @@ public partial class MainWindowViewModel : ObservableObject
                 CurrentViewModel = Users;
                 _ = Users.RefreshAsync();
                 break;
+            case "Profile" when IsLoggedIn:
+                CurrentViewModel = Profile;
+                _ = Profile.RefreshAsync();
+                break;
             default:
                 StatusMessage = "当前账户无权打开此页面。";
                 return;
@@ -94,6 +113,13 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     partial void OnIsSidebarExpandedChanged(bool value) => OnPropertyChanged(nameof(SidebarWidth));
+    partial void OnIsRegisterModeChanged(bool value)
+    {
+        OnPropertyChanged(nameof(AuthenticationTitle));
+        OnPropertyChanged(nameof(AuthenticationSubmitText));
+        OnPropertyChanged(nameof(AuthenticationToggleText));
+        OnPropertyChanged(nameof(IsLoginMode));
+    }
 
     partial void OnCurrentUserChanged(UserAccount? value)
     {
@@ -104,6 +130,10 @@ public partial class MainWindowViewModel : ObservableObject
         Models.NotifyAdminStatusChanged();
         History.NotifyIdentityChanged();
         if (!IsLoggedIn && ReferenceEquals(CurrentViewModel, History))
+        {
+            CurrentViewModel = Chat;
+        }
+        if (!IsLoggedIn && ReferenceEquals(CurrentViewModel, Profile))
         {
             CurrentViewModel = Chat;
         }
@@ -154,11 +184,22 @@ public partial class MainWindowViewModel : ObservableObject
     private void OpenAuthentication()
     {
         IsAuthenticationOpen = true;
+        IsRegisterMode = false;
         StatusMessage = string.Empty;
     }
 
     [RelayCommand]
     private void CloseAuthentication() => IsAuthenticationOpen = false;
+
+    [RelayCommand]
+    private void ToggleAuthenticationMode()
+    {
+        IsRegisterMode = !IsRegisterMode;
+        LoginPassword = string.Empty;
+        RegisterPassword = string.Empty;
+        RegisterConfirmPassword = string.Empty;
+        StatusMessage = string.Empty;
+    }
 
     [RelayCommand]
     private void DismissBootstrapNotice()
@@ -180,6 +221,7 @@ public partial class MainWindowViewModel : ObservableObject
                 return;
             }
             CurrentUser = user;
+            _services.Chat.ClearConversationState();
             LoginPassword = string.Empty;
             IsAuthenticationOpen = false;
             await Chat.ChangeIdentityAsync(cancellationToken);
@@ -193,10 +235,62 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private async Task RegisterAsync(CancellationToken cancellationToken)
+    {
+        if (!string.Equals(RegisterPassword, RegisterConfirmPassword, StringComparison.Ordinal))
+        {
+            StatusMessage = "两次输入的密码不一致。";
+            return;
+        }
+
+        try
+        {
+            var userId = await _services.Authentication.CreateUserAsync(
+                LoginUsername, RegisterPassword, cancellationToken);
+            var user = await _services.Authentication.SignInAsync(
+                LoginUsername, RegisterPassword, cancellationToken);
+            if (user is null || !string.Equals(user.Id, userId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("账户已创建，但无法自动登录，请使用新账户重新登录。");
+            }
+
+            CurrentUser = user;
+            _services.Chat.ClearConversationState();
+            LoginPassword = string.Empty;
+            RegisterPassword = string.Empty;
+            RegisterConfirmPassword = string.Empty;
+            IsAuthenticationOpen = false;
+            await Chat.ChangeIdentityAsync(cancellationToken);
+            await History.RefreshAsync(cancellationToken);
+            Navigate("Chat");
+            StatusMessage = "账户已创建并登录。可在用户中心补充个人资料。";
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Local account registration failed");
+            StatusMessage = $"注册失败：{exception.Message}";
+        }
+    }
+
+    public async Task CompleteSelfServiceAccountDeletionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        CurrentUser = null;
+        IsAuthenticationOpen = false;
+        _services.Chat.ClearConversationState();
+        await Chat.ChangeIdentityAsync(cancellationToken);
+        await History.RefreshAsync(cancellationToken);
+        await Profile.RefreshAsync(cancellationToken);
+        Navigate("Chat");
+        StatusMessage = "账户及其私有对话已注销。";
+    }
+
     [RelayCommand(CanExecute = nameof(CanChangeIdentity))]
     private async Task SignOutAsync(CancellationToken cancellationToken)
     {
         CurrentUser = null;
+        _services.Chat.ClearConversationState();
         await Chat.ChangeIdentityAsync(cancellationToken);
         await History.RefreshAsync(cancellationToken);
         Navigate("Chat");

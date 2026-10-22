@@ -1,4 +1,7 @@
 using System.Security.Cryptography;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using Qwen3.Desktop.Models;
 
@@ -6,6 +9,22 @@ namespace Qwen3.Desktop.Services;
 
 public sealed class SqliteDatabase
 {
+    private static readonly HashSet<string> InsightStopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "the", "and", "for", "with", "that", "this", "from", "have", "what", "when", "where",
+        "how", "why", "which", "would", "could", "should", "about", "your", "you", "are",
+        "是", "的", "了", "我", "你", "他", "她", "它", "这", "那", "什么", "怎么", "如何",
+        "可以", "请问", "一个", "一下", "以及", "进行", "帮助", "帮我", "是否"
+    };
+
+    private static readonly (string Name, string[] Terms)[] InsightDomains =
+    [
+        ("软件与技术", ["代码", "编程", "软件", "程序", "python", "csharp", "java", "api", "database", "模型", "算法", "技术"]),
+        ("科学与学习", ["数学", "物理", "化学", "生物", "科学", "学习", "研究", "历史", "教育", "知识"]),
+        ("写作与创作", ["写作", "文章", "故事", "小说", "创作", "文案", "翻译", "诗歌", "设计", "创意"]),
+        ("工作与生活", ["工作", "生活", "计划", "健康", "旅行", "沟通", "建议", "管理", "职业"])
+    ];
+
     private static readonly (string Title, string Name, string Description, string Url)[] BuiltInModels =
     [
         ("Qwen3 0.6B INT8", "Qwen3-0.6B-int8-onnx", "Qwen3 0.6B ONNX model, INT8 quantized.",
@@ -58,7 +77,12 @@ public sealed class SqliteDatabase
                     password_salt TEXT NOT NULL,
                     role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
                     is_locked INTEGER NOT NULL DEFAULT 0,
-                    created_utc TEXT NOT NULL
+                    created_utc TEXT NOT NULL,
+                    nickname TEXT NOT NULL DEFAULT '',
+                    avatar_url TEXT NOT NULL DEFAULT '',
+                    birthday TEXT NOT NULL DEFAULT '',
+                    blog_url TEXT NOT NULL DEFAULT '',
+                    bio TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS models (
                     id TEXT PRIMARY KEY,
@@ -110,10 +134,11 @@ public sealed class SqliteDatabase
         }
 
         await EnsureModelDownloadColumnAsync(connection, cancellationToken);
+        await EnsureUserProfileColumnsAsync(connection, cancellationToken);
         await using (var versionCommand = connection.CreateCommand())
         {
             versionCommand.CommandText =
-                "UPDATE app_metadata SET value = '2' WHERE key = 'schema_version';";
+                "UPDATE app_metadata SET value = '3' WHERE key = 'schema_version';";
             await versionCommand.ExecuteNonQueryAsync(cancellationToken);
         }
         await SeedModelsAsync(connection, cancellationToken);
@@ -613,6 +638,225 @@ public sealed class SqliteDatabase
         return id;
     }
 
+    public async Task<UserProfile> GetUserProfileAsync(
+        string userId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT u.id, u.username, u.nickname, u.avatar_url, u.birthday, u.blog_url, u.bio,
+                u.role, u.created_utc,
+                COALESCE((SELECT SUM(prompt_tokens + completion_tokens)
+                    FROM usage_events WHERE user_id = u.id), 0)
+            FROM users u WHERE u.id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", userId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new UnauthorizedAccessException("The current account no longer exists.");
+        }
+        return new UserProfile(
+            reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
+            reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetString(7),
+            DateTimeOffset.Parse(reader.GetString(8)), reader.GetInt64(9));
+    }
+
+    public async Task UpdateUserProfileAsync(
+        string userId,
+        string nickname,
+        string avatarUrl,
+        string birthday,
+        string blogUrl,
+        string bio,
+        CancellationToken cancellationToken = default)
+    {
+        nickname = nickname.Trim();
+        avatarUrl = avatarUrl.Trim();
+        birthday = birthday.Trim();
+        blogUrl = blogUrl.Trim();
+        bio = bio.Trim();
+        if (nickname.Length is < 1 or > 60)
+        {
+            throw new ArgumentException("昵称长度需为 1-60 个字符。", nameof(nickname));
+        }
+        if (avatarUrl.Length > 2048 || (!string.IsNullOrEmpty(avatarUrl) && !IsWebUrl(avatarUrl)))
+        {
+            throw new ArgumentException("头像链接必须是有效的 HTTP/HTTPS 地址，且不超过 2048 个字符。", nameof(avatarUrl));
+        }
+        if (!string.IsNullOrEmpty(birthday) &&
+            !DateOnly.TryParseExact(birthday, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+        {
+            throw new ArgumentException("生日请使用 yyyy-MM-dd 格式。", nameof(birthday));
+        }
+        if (blogUrl.Length > 2048 || (!string.IsNullOrEmpty(blogUrl) && !IsWebUrl(blogUrl)))
+        {
+            throw new ArgumentException("博客链接必须是有效的 HTTP/HTTPS 地址，且不超过 2048 个字符。", nameof(blogUrl));
+        }
+        if (bio.Length > 1000)
+        {
+            throw new ArgumentException("个人简介不能超过 1000 个字符。", nameof(bio));
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE users SET nickname = $nickname, avatar_url = $avatar, birthday = $birthday,
+                blog_url = $blog, bio = $bio WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$nickname", nickname);
+        command.Parameters.AddWithValue("$avatar", avatarUrl);
+        command.Parameters.AddWithValue("$birthday", birthday);
+        command.Parameters.AddWithValue("$blog", blogUrl);
+        command.Parameters.AddWithValue("$bio", bio);
+        command.Parameters.AddWithValue("$id", userId);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new UnauthorizedAccessException("The current account no longer exists.");
+        }
+    }
+
+    public async Task ChangeOwnPasswordAsync(
+        string userId,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken = default)
+    {
+        ValidatePassword(newPassword);
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT password_hash, password_salt FROM users WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", userId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new UnauthorizedAccessException("The current account no longer exists.");
+        }
+        var hash = reader.GetString(0);
+        var salt = reader.GetString(1);
+        await reader.DisposeAsync();
+        if (!VerifyPassword(currentPassword, hash, salt))
+        {
+            throw new UnauthorizedAccessException("当前密码不正确。");
+        }
+        var (newHash, newSalt) = HashPassword(newPassword);
+        await using var update = connection.CreateCommand();
+        update.CommandText = "UPDATE users SET password_hash = $hash, password_salt = $salt WHERE id = $id;";
+        update.Parameters.AddWithValue("$hash", newHash);
+        update.Parameters.AddWithValue("$salt", newSalt);
+        update.Parameters.AddWithValue("$id", userId);
+        if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new UnauthorizedAccessException("The current account no longer exists.");
+        }
+    }
+
+    public async Task<UserInsights> GetOwnUserInsightsAsync(
+        string userId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var summary = connection.CreateCommand();
+        summary.CommandText = """
+            SELECT
+                (SELECT COUNT(*) FROM conversations WHERE owner_user_id = $id),
+                (SELECT COUNT(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
+                    WHERE c.owner_user_id = $id),
+                COALESCE((SELECT SUM(prompt_tokens + completion_tokens)
+                    FROM usage_events WHERE user_id = $id), 0);
+            """;
+        summary.Parameters.AddWithValue("$id", userId);
+        await using var reader = await summary.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("Could not load user profile statistics.");
+        }
+        var conversationCount = reader.GetInt32(0);
+        var messageCount = reader.GetInt32(1);
+        var tokensUsed = reader.GetInt64(2);
+        await reader.DisposeAsync();
+
+        await using var messagesCommand = connection.CreateCommand();
+        messagesCommand.CommandText = """
+            SELECT m.content FROM messages m
+            JOIN conversations c ON c.id = m.conversation_id
+            WHERE c.owner_user_id = $id AND m.role = 'user'
+            ORDER BY m.created_utc DESC;
+            """;
+        messagesCommand.Parameters.AddWithValue("$id", userId);
+        await using var messagesReader = await messagesCommand.ExecuteReaderAsync(cancellationToken);
+        var text = new StringBuilder();
+        while (await messagesReader.ReadAsync(cancellationToken))
+        {
+            text.AppendLine(messagesReader.GetString(0));
+        }
+
+        var terms = Regex.Matches(text.ToString(), @"[\p{IsCJKUnifiedIdeographs}]{2,}|[A-Za-z][A-Za-z0-9+#.-]{2,}")
+            .Select(match => match.Value.Trim('.', '-', '+', '#'))
+            .Where(term => term.Length > 1 && !InsightStopWords.Contains(term))
+            .GroupBy(term => term, StringComparer.OrdinalIgnoreCase)
+            .Select(group => (Term: group.Key, Count: group.Count()))
+            .OrderByDescending(item => item.Count)
+            .ThenBy(item => item.Term, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var domains = InsightDomains.Select(domain =>
+        {
+            var count = terms.Where(term => domain.Terms.Contains(
+                    term.Term, StringComparer.OrdinalIgnoreCase))
+                .Sum(term => term.Count);
+            return (domain.Name, Count: count);
+        }).Where(domain => domain.Count > 0)
+            .OrderByDescending(domain => domain.Count)
+            .ToArray();
+        var domainTotal = Math.Max(1, domains.Sum(domain => domain.Count));
+
+        return new UserInsights(
+            conversationCount,
+            messageCount,
+            tokensUsed,
+            terms.Take(12).Select(term => term.Term).ToArray(),
+            domains.Select(domain => new UserDomainInsight(
+                domain.Name, domain.Count, domain.Count * 100.0 / domainTotal)).ToArray());
+    }
+
+    public async Task DeleteOwnAccountAsync(
+        string userId, string password, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var lookup = connection.CreateCommand();
+        lookup.Transaction = (SqliteTransaction)transaction;
+        lookup.CommandText = "SELECT password_hash, password_salt, role FROM users WHERE id = $id;";
+        lookup.Parameters.AddWithValue("$id", userId);
+        await using var reader = await lookup.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new UnauthorizedAccessException("The current account no longer exists.");
+        }
+        var hash = reader.GetString(0);
+        var salt = reader.GetString(1);
+        var role = reader.GetString(2);
+        await reader.DisposeAsync();
+        if (string.Equals(role, "admin", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("管理员账户不能自主注销，以免失去本地管理入口。");
+        }
+        if (!VerifyPassword(password, hash, salt))
+        {
+            throw new UnauthorizedAccessException("密码不正确，无法注销账户。");
+        }
+        await using var delete = connection.CreateCommand();
+        delete.Transaction = (SqliteTransaction)transaction;
+        delete.CommandText = "DELETE FROM users WHERE id = $id AND role = 'user';";
+        delete.Parameters.AddWithValue("$id", userId);
+        if (await delete.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("账户未能注销。");
+        }
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     public async Task SetUserLockedAsync(string userId, bool locked, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -732,6 +976,40 @@ public sealed class SqliteDatabase
         }
     }
 
+    private static async Task EnsureUserProfileColumnsAsync(
+        SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "PRAGMA table_info(users);";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                existing.Add(reader.GetString(1));
+            }
+        }
+
+        var migrations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["nickname"] = "ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT '';",
+            ["avatar_url"] = "ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT '';",
+            ["birthday"] = "ALTER TABLE users ADD COLUMN birthday TEXT NOT NULL DEFAULT '';",
+            ["blog_url"] = "ALTER TABLE users ADD COLUMN blog_url TEXT NOT NULL DEFAULT '';",
+            ["bio"] = "ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT '';"
+        };
+        foreach (var (column, sql) in migrations)
+        {
+            if (existing.Contains(column))
+            {
+                continue;
+            }
+            await using var migration = connection.CreateCommand();
+            migration.CommandText = sql;
+            await migration.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
     private async Task<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
     {
         var connection = new SqliteConnection(_connectionString);
@@ -764,6 +1042,18 @@ public sealed class SqliteDatabase
         }
         return name;
     }
+
+    private static bool VerifyPassword(string password, string encodedHash, string encodedSalt)
+    {
+        var (candidateHash, _) = HashPassword(password, Convert.FromBase64String(encodedSalt));
+        return CryptographicOperations.FixedTimeEquals(
+            Convert.FromBase64String(candidateHash), Convert.FromBase64String(encodedHash));
+    }
+
+    private static bool IsWebUrl(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+        uri.Scheme is "http" or "https" &&
+        !string.IsNullOrWhiteSpace(uri.Host);
 
     private static void ValidateModelFields(
         string title,
@@ -813,6 +1103,11 @@ public sealed class SqliteDatabase
         {
             throw new ArgumentException("Username must be 3-64 characters and contain only letters, digits, '.', '_' or '-'.");
         }
+        ValidatePassword(password);
+    }
+
+    private static void ValidatePassword(string password)
+    {
         if (string.IsNullOrWhiteSpace(password) || password.Length < 12)
         {
             throw new ArgumentException("Password must contain at least 12 characters.");

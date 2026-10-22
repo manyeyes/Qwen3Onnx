@@ -20,7 +20,8 @@ public sealed class ConversationTitleService(ILogger logger)
         ChatAssistant assistant,
         string firstQuestion,
         string firstAnswer,
-        string currentModelSystemPrompt)
+        string currentModelSystemPrompt,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -49,7 +50,10 @@ public sealed class ConversationTitleService(ILogger logger)
             };
             var titleInput = $"用户问题：{firstQuestion}\n回答摘要：{firstAnswer}";
             var result = assistant.Ask(
-                titleInput, Scene.Precise, generationConfig: config);
+                titleInput,
+                Scene.Precise,
+                generationConfig: config,
+                cancellationToken: cancellationToken);
             var title = Regex.Replace(
                     result.Answer, @"<think[^>]*>.*?</think\s*>", string.Empty,
                     RegexOptions.Singleline | RegexOptions.CultureInvariant)
@@ -61,6 +65,10 @@ public sealed class ConversationTitleService(ILogger logger)
                 return CreateFallback(firstQuestion);
             }
             return title;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception exception)
         {

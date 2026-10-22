@@ -74,6 +74,70 @@ public sealed class SqliteDatabaseTests
     }
 
     [TestMethod]
+    public async Task UsersCanManageTheirOwnProfilePasswordAndAccount()
+    {
+        const string initialPassword = "initial-password-123";
+        const string updatedPassword = "updated-password-456";
+        var userId = await _database.CreateUserAsync(
+            "profile-user", initialPassword, _cancellationToken);
+        var model = (await _database.GetModelsAsync(_cancellationToken))[0];
+        await SaveTurnAsync(userId, model.Id, "profile");
+
+        await _database.UpdateUserProfileAsync(
+            userId,
+            "Profile User",
+            "https://example.com/avatar.png",
+            "1990-01-02",
+            "https://example.com/blog",
+            "A short profile.",
+            _cancellationToken);
+        var profile = await _database.GetUserProfileAsync(userId, _cancellationToken);
+        Assert.AreEqual("Profile User", profile.Nickname);
+        Assert.AreEqual("1990-01-02", profile.Birthday);
+        Assert.AreEqual(7L, profile.TokensUsed);
+
+        var insights = await _database.GetOwnUserInsightsAsync(userId, _cancellationToken);
+        Assert.AreEqual(1, insights.ConversationCount);
+        Assert.AreEqual(2, insights.MessageCount);
+        Assert.AreEqual(7L, insights.TokensUsed);
+
+        await _database.ChangeOwnPasswordAsync(
+            userId, initialPassword, updatedPassword, _cancellationToken);
+        Assert.IsNull(await _database.AuthenticateAsync(
+            "profile-user", initialPassword, _cancellationToken));
+        Assert.IsNotNull(await _database.AuthenticateAsync(
+            "profile-user", updatedPassword, _cancellationToken));
+
+        await _database.DeleteOwnAccountAsync(userId, updatedPassword, _cancellationToken);
+        Assert.IsNull(await _database.AuthenticateAsync(
+            "profile-user", updatedPassword, _cancellationToken));
+        await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(() =>
+            _database.GetUserProfileAsync(userId, _cancellationToken));
+    }
+
+    [TestMethod]
+    public async Task GuestCanRegisterAndOpenUserCenter()
+    {
+        using var services = new DesktopServices(_temporaryDirectory);
+        var shell = new MainWindowViewModel(services, new BootstrapResult(null));
+        await shell.Initialization;
+        shell.LoginUsername = "registered-user";
+        shell.RegisterPassword = "registered-password-123";
+        shell.RegisterConfirmPassword = shell.RegisterPassword;
+        shell.IsRegisterMode = true;
+
+        await shell.RegisterCommand.ExecuteAsync(null);
+
+        Assert.IsNotNull(shell.CurrentUser);
+        Assert.AreEqual("registered-user", shell.CurrentUser.Username);
+        Assert.AreEqual("user", shell.CurrentUser.Role);
+        shell.Navigate("Profile");
+        await shell.Profile.RefreshAsync(_cancellationToken);
+        Assert.AreSame(shell.Profile, shell.CurrentViewModel);
+        Assert.AreEqual("registered-user", shell.Profile.Profile?.Username);
+    }
+
+    [TestMethod]
     public async Task TurnAndUsageAreCommittedTogether()
     {
         var model = (await _database.GetModelsAsync(_cancellationToken))[0];
@@ -162,6 +226,37 @@ public sealed class SqliteDatabaseTests
         Assert.AreEqual(2, followUp.HistoryTurns);
         StringAssert.Contains(factory.Engine.LastPrefill, "我最喜欢蓝色");
         StringAssert.Contains(factory.Engine.LastPrefill, "test answer");
+    }
+
+    [TestMethod]
+    public void ChatAssistantDoesNotAddTurnWhenGenerationIsCancelled()
+    {
+        var factory = new TestInferenceEngineFactory();
+        using var assistant = new ChatAssistant(
+            new AssistantConfig { EngineId = "test" }, factory);
+        var config = new GenerationConfig
+        {
+            ThinkMode = false,
+            ThinkingBudget = 0,
+            MultiTurn = true,
+            MaxTurns = 3,
+            MaxHistoryChars = 400,
+            MaxHistoryTokens = 1024,
+            ResetOnFactQuestion = false,
+            EnableRepetitionCheck = false,
+            EnableLoopDetection = false
+        };
+        assistant.Ask("first question", generationConfig: config);
+        using var cancellation = new CancellationTokenSource();
+
+        Assert.ThrowsException<OperationCanceledException>(() => assistant.Ask(
+            "cancelled question",
+            onToken: _ => cancellation.Cancel(),
+            generationConfig: config,
+            cancellationToken: cancellation.Token));
+
+        Assert.AreEqual(1, assistant.History.Count);
+        Assert.AreEqual("first question", assistant.History[0].User);
     }
 
     [TestMethod]
@@ -412,9 +507,14 @@ public sealed class SqliteDatabaseTests
             $"<user>{question}</user>{(thinkMode ? "<think>" : "<think></think>")}";
 
         public (string Text, GenerationStats Stats) Generate(
-            string prompt, GenerationConfig config, Action<string>? onToken = null)
+            string prompt,
+            GenerationConfig config,
+            Action<string>? onToken = null,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             onToken?.Invoke("test answer");
+            cancellationToken.ThrowIfCancellationRequested();
             return ("test answer", new GenerationStats(2, 1, 2, 0.5, false, false));
         }
 

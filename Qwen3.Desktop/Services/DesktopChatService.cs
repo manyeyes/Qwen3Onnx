@@ -33,6 +33,8 @@ public sealed class DesktopChatService : IDisposable
         return await _database.GetMessagesAsync(conversationId, ownerUserId, cancellationToken);
     }
 
+    public void ClearConversationState() => _assistant?.ClearMemory();
+
     public async Task<ChatSendResult> SendAsync(
         string? conversationId,
         string? ownerUserId,
@@ -105,7 +107,11 @@ public sealed class DesktopChatService : IDisposable
             () =>
             {
                 assistant.RestoreHistory(turns, generationConfig);
-                return assistant.Ask(promptText, generationConfig: generationConfig, onToken: onToken);
+                return assistant.Ask(
+                    promptText,
+                    generationConfig: generationConfig,
+                    onToken: onToken,
+                    cancellationToken: cancellationToken);
             },
             cancellationToken);
         _logger.LogDebug(
@@ -113,14 +119,17 @@ public sealed class DesktopChatService : IDisposable
             id, result.PromptTokens, result.HistoryTurns, result.Generation.TotalTokens,
             result.Generation.TotalTimeSeconds, result.Generation.TokensPerSecond);
 
+        cancellationToken.ThrowIfCancellationRequested();
         if (firstTurn)
         {
             var titleResult = await Task.Run(
-                () => _titleService.Generate(assistant, userText, result.Answer, modelConfig.SystemPrompt),
+                () => _titleService.Generate(
+                    assistant, userText, result.Answer, modelConfig.SystemPrompt, cancellationToken),
                 cancellationToken);
             title = titleResult;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         id = await _database.SaveTurnAsync(
             id,
             ownerUserId,
@@ -192,7 +201,10 @@ public sealed class DesktopChatService : IDisposable
             {
                 assistant.RestoreHistory(turns, generationConfig);
                 return assistant.Ask(
-                    userMessage.Content, generationConfig: generationConfig, onToken: onToken);
+                    userMessage.Content,
+                    generationConfig: generationConfig,
+                    onToken: onToken,
+                    cancellationToken: cancellationToken);
             },
             cancellationToken);
 
