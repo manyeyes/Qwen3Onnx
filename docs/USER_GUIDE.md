@@ -1,6 +1,6 @@
 # Qwen3 ONNX .NET 推理项目使用与集成指南
 
-本文面向使用者、.NET 集成开发者和后续推理引擎扩展开发者，介绍项目架构、Qwen3 与当前 ONNX 模型约定、模型获取、构建运行、CLI 与控制台使用、全部生成参数、C# 调用 API、日志排查及新增模型引擎的方法。
+本文面向使用者、.NET 集成开发者和后续推理引擎扩展开发者，介绍项目架构、Qwen3 与当前 ONNX 模型约定、模型获取、构建运行、CLI、控制台和桌面端使用、生成参数、C# 调用 API、日志排查及新增模型引擎的方法。
 
 > 代码行为可能随版本演进。命令行的最终参数列表请始终以 `Qwen3.Cli --help` 输出为准。
 
@@ -19,16 +19,18 @@
 11. [扩展到其他模型](#11-扩展到其他模型)
 12. [日志、错误和排障](#12-日志错误和排障)
 13. [当前限制与后续扩展方向](#13-当前限制与后续扩展方向)
+14. [Avalonia 桌面端](#14-avalonia-桌面端)
 
 ## 1. 项目简介
 
-本项目将 Qwen3 本地 ONNX 推理封装为三个 .NET 工程：
+本项目将 Qwen3 本地 ONNX 推理封装为四个 .NET 工程：
 
 | 工程 | 类型 | 职责 |
 | --- | --- | --- |
 | `Qwen3.Inference` | 类库 | 配置、推理引擎抽象与工厂、ONNX Runtime 实现、生成策略、提示词、对话历史及统计结果 |
 | `Qwen3.Cli` | 控制台应用 | 单次问答命令行入口、参数解析与验证、帮助、日志与退出码 |
 | `Qwen3.Console` | 控制台应用 | 面向人工交互的多轮聊天体验、场景和思考模式命令 |
+| `Qwen3.Desktop` | Avalonia 桌面应用 | MVVM 聊天界面、模型管理、SQLite 历史和本地账户 |
 
 解决方案文件为 `Qwen3Onnx.sln`。所有应用依赖 `Qwen3.Inference`，模型会在 assistant 创建时加载，在进程内复用；一次 CLI 进程处理一个请求，交互式 Console 进程可持续处理多轮输入。
 
@@ -117,7 +119,7 @@ Qwen3.Console ───┘                                         └── Onn
 ### 4.1 开发环境
 
 - .NET 8 SDK
-- Windows x64（当前 `Qwen3.Inference` 引用 `Tokenizers.DotNet.runtime.win-x64`）
+- Windows、Linux 或 macOS（各平台需要对应的 .NET 8 Runtime）
 - 能读取模型仓库所提供 ONNX 图的 CPU 环境
 
 ### 4.2 NuGet 依赖
@@ -127,9 +129,12 @@ Qwen3.Console ───┘                                         └── Onn
 | `System.CommandLine` | 2.0.13 | CLI 参数、帮助、解析与选项校验 |
 | `Microsoft.ML.OnnxRuntime` | 1.23.2 | ONNX 模型执行 |
 | `Tokenizers.DotNet` | 1.4.1 | 载入 Hugging Face `tokenizer.json` 并执行编码/解码 |
-| `Tokenizers.DotNet.runtime.win-x64` | 1.4.1 | Tokenizer Windows x64 原生运行时 |
+| `Tokenizers.DotNet.runtime.*` | 1.4.1 | Windows x64、Linux x64/arm64、macOS x64/arm64 Tokenizer 原生运行时 |
 | `Microsoft.Extensions.Logging.Abstractions` | 9.0.0 | 推理类库日志抽象 |
 | `Microsoft.Extensions.Logging.Console` | 9.0.0 | CLI 控制台日志 |
+| `Avalonia` / `Avalonia.Desktop` / `Avalonia.Themes.Fluent` | 12.1.4 | 跨平台桌面 UI |
+| `CommunityToolkit.Mvvm` | 8.4.2 | MVVM ObservableObject 与命令生成 |
+| `Microsoft.Data.Sqlite` | 9.0.0 | 本地会话、账户、模型目录及用量数据库 |
 
 当前引擎使用 ONNX Runtime CPU Execution Provider。GPU Provider 尚未由该实现配置。
 
@@ -652,7 +657,7 @@ Console.WriteLine(answer.Answer);
 | 生成提前停止 | 检查 stop token、`--max-new-tokens`、`--thinking-budget` 和 loop detection |
 | 输出仍出现推理过程 | `--hide-thinking` 过滤 `<think>...</think>`；模型若未输出这些标签，不能保证识别其他格式 |
 | 历史轮次被清除 | 检查场景是否切换了多轮/think/system prompt，或是否启用 fact reset |
-| Tokenizer 原生库加载失败 | 当前项目包含 Windows x64 runtime；确认进程架构和目标机器的原生依赖 |
+| Tokenizer 原生库加载失败 | 确认发布 RID、进程架构与目标机器的 Tokenizers 原生依赖 |
 
 ### 12.2 日志安全
 
@@ -663,7 +668,7 @@ Console.WriteLine(answer.Answer);
 当前实现的已知边界：
 
 1. ONNX Runtime 使用 CPU Provider。
-2. Tokenizers 原生依赖目前面向 Windows x64。
+2. Tokenizers 原生依赖已配置 Windows x64、Linux x64/arm64 和 macOS x64/arm64；仍需在目标系统验证原生库加载。
 3. 引擎默认文件名为 `embedding.int8.onnx` 和 `decoder.int8.onnx`；CLI 未提供独立 ONNX 文件名参数。
 4. decoder 输入输出契约按当前 Qwen3 导出图布局实现，不保证与所有 ONNX 导出器或量化模型兼容。
 5. CLI 是单次请求进程；多轮交互由 `Qwen3.Console` 或类库宿主程序负责。
@@ -680,3 +685,73 @@ Console.WriteLine(answer.Answer);
 - 建立不依赖大模型权重的单元测试，以及在拥有模型文件时运行的 ONNX 集成测试。
 
 在新增平台、模型格式或 Provider 前，应使用对应运行时和真实模型资产进行完整验证。
+
+## 14. Avalonia 桌面端
+
+桌面端项目为 `Qwen3.Desktop`，使用 Avalonia 12、CommunityToolkit.Mvvm、SQLite 和 `Qwen3.Inference`。界面包含聊天、模型管理、历史记录及管理员账户管理；侧栏可折叠。所有模型推理由统一的 `DesktopChatService` 调用核心 `ChatAssistant`，不会另建一套推理实现。
+
+### 14.1 启动与构建
+
+```powershell
+dotnet restore Qwen3Onnx.sln
+dotnet run --project Qwen3.Desktop
+```
+
+发布时指定目标平台 RID，例如：
+
+```powershell
+dotnet publish Qwen3.Desktop/Qwen3.Desktop.csproj -c Release -r win-x64 --self-contained false
+dotnet publish Qwen3.Desktop/Qwen3.Desktop.csproj -c Release -r linux-x64 --self-contained false
+dotnet publish Qwen3.Desktop/Qwen3.Desktop.csproj -c Release -r osx-arm64 --self-contained false
+```
+
+跨平台发布需要目标机安装 .NET 8 Runtime；若要生成自包含程序，可将 `--self-contained false` 改为 `--self-contained true`。ONNX Runtime 当前使用 CPU Provider。请在目标系统检查原生依赖、文件权限和窗口行为；单个平台构建成功不代表其他平台的运行环境已验证。
+
+### 14.2 首次启动与数据库
+
+应用在系统用户的本地应用数据目录建立 `Qwen3OnnxDesktop` 文件夹，其中包括 `qwen3-desktop.sqlite3` 数据库、`models` 模型目录和 `logs\desktop.log` 日志文件。具体根目录遵循 .NET `Environment.SpecialFolder.LocalApplicationData`；Windows 通常位于 `%LOCALAPPDATA%\Qwen3OnnxDesktop`。
+
+首次初始化数据库和表结构，并预置用户提供的四个 ModelScope 模型条目。若尚无管理员账户，程序创建用户名为 `admin` 的账户，使用密码学安全随机数生成一次性密码，并在启动界面显示。请先妥善保存该密码再关闭提示；密码仅以 PBKDF2-SHA256 哈希和 salt 存储，不会在后续启动时再次显示。当前没有管理员密码重置流程。
+
+### 14.3 Chat 与文本附件
+
+1. 在模型管理中下载至少一个模型，然后回到聊天顶部选择已安装模型。
+2. 输入文本，选择“思考模式”并按需打开“高级配置”调整生成长度、温度、Top P/Top K、重复惩罚、思考预算、历史轮数、采样和流式输出。
+3. 附件只作为文本输入拼入提示词，不会作为二进制文件发送。支持 `.txt`、`.md`、`.json`、`.csv`、`.xml`、常见配置文件及部分源码格式；每条消息最多 5 个文件，每个文件最大 1 MiB。非文本内容和不支持的扩展名会拒绝。
+4. 首轮回答后，桌面端尝试用模型生成简短标题；若标题生成失败，会回退为首条输入的摘要。消息、附件名/内容、生成 token 数和标题会存入 SQLite。
+5. 消息正文按 Markdown 渲染，支持常用标题、列表、引用、链接、行内格式和代码块。消息上方的“复制”复制可见正文（Markdown 源文本），不包含单独呈现的思考段；用户消息可点“重新发送”，将该问题作为新一轮追加到当前对话。
+6. 助手回复中的 `<think>...</think>` 单独显示在可折叠区域，收起时以约 6 行高度跟随显示最新输出，生成期间显示思考状态；展开后可滚动查看思考文本。最新一条助手回复可点“重新生成回复”；程序使用该轮之前的历史重新推理，成功后替换原回复，失败则保留原回复。重新生成产生的 token 用量会继续计入统计。
+
+数据库消息和 token 用量按一轮请求原子写入；推理失败时不会留下空会话或半条消息，并会保留输入供重试。重新打开对话时会从数据库消息重建推理历史。
+
+状态栏的 `tokens/s` 是 ONNX 引擎实际生成阶段的速度，与 CLI 的推理统计使用相同计时口径；`本轮` 则额外包括模型首次加载、历史 KV cache 重建、首轮标题生成和数据库保存，因此不应直接拿本轮秒数与 CLI 生成耗时对比。桌面端默认采用聊天场景参数（思考预算 192、最多生成 256 tokens、最多保留 3 轮历史），并可在高级配置中调整；CLI 会根据问题自动选择场景，例如事实类问题可能使用不思考的快速问答配置，所以只有场景、思考模式和生成参数一致时，`tokens/s` 才适合横向比较。生成过程中使用轻量纯文本控件并每 100ms 批量刷新，避免持续解析和重绘 Markdown；完成后再切换为 Markdown 渲染。
+
+桌面聊天默认保留最近最多 3 轮对话作为上下文，不会因为识别为事实类问题而自动清空历史。状态栏显示的“上下文 N 轮”是本次回答使用的先前对话轮数；重新打开历史会话时会从 SQLite 恢复完整消息，再按轮数和 token 限额裁剪后重建推理上下文。
+
+### 14.4 模型登记、下载和删除
+
+模型管理显示内置模型和管理员添加的模型。管理员登记或编辑模型标题、英文目录名、描述、Git clone 仓库 URL，以及 HTTP 备用文件清单。HTTP 清单每行填写相对路径、该文件 URL，并可选填写预期大小和 SHA-256，例如：
+
+```text
+config.json | https://host.example/model/config.json | 420 | <sha256>
+tokenizer.json | https://host.example/model/tokenizer.json
+embedding.int8.onnx | https://host.example/model/embedding.int8.onnx
+decoder.int8.onnx | https://host.example/model/decoder.int8.onnx
+```
+
+相对路径保持模型仓库内的目录结构；必需模型文件应包含 `config.json`、`tokenizer.json`、`embedding*.onnx` 和 `decoder*.onnx`。下载优先尝试 Git 浅克隆；Git 不存在、克隆失败、关键文件缺失或 Git LFS 权重仅得到指针时，会保留已克隆的完整文件，并使用登记的逐文件 HTTP 链接补齐。如果未登记这些链接，内置 ModelScope 模型会继续使用 ModelScope 文件清单 API 下载。HTTP 下载会校验安全相对路径、可用的文件大小和 SHA-256；必需文件校验通过后才发布模型目录。发布目录后会尽力清理 `.git` 元数据；若操作系统拒绝删除 Git pack 文件，模型仍会安装成功，`.git` 会留在模型目录中并在状态中提示。下载或校验失败时，临时 `.partial` 目录会保留并在状态提示中显示其路径，便于排查；再次开始下载会使用新的临时目录，不会自动续传旧目录。
+
+模型列表提供编辑与删除。添加或编辑会在遮罩弹窗中完成，删除前会显示确认弹窗。已安装模型或已被对话引用的模型不能更改英文名称（避免本地路径/历史关联失效）；被历史对话引用的模型不能删除。
+
+HTTP 后备目前仅实现 ModelScope 文件清单协议。其他 Git 兼容站点在系统安装 Git 时可尝试克隆；如果 Git 不可用，目前不能自动解析任意站点的 HTTP 文件清单。添加未知模型前，应确认仓库结构、ONNX 图输入输出及 tokenizer/config 契约符合当前推理核心。删除仍被历史会话引用的模型会被拒绝，以避免破坏历史对话关联。
+
+### 14.5 历史、登录与权限范围
+
+- 访客对话使用 `owner_user_id IS NULL`，对本机访客可见。
+- 侧栏始终显示当前访问身份最近更新的最多 100 条对话标题，点击即可继续聊天。
+- 登录用户可打开“管理我的对话”页面，检索、修改标题、删除和继续自己的全部会话。该页面不会跨账户读取对话内容；管理员也只能管理自己的会话。
+- 用户切换身份时聊天和侧栏历史会清空并重新加载该身份的数据。生成进行中会禁用新对话和身份切换，避免跨身份混合。
+- 管理员可创建本地用户、查看累计 token 用量和锁定/解锁普通账户。管理员不会获得读取用户私聊内容的查询接口。
+- 密码至少 12 个字符，以 PBKDF2-SHA256 派生值存储。锁定账户不能重新登录；本地数据库和模型文件仍由当前操作系统账户管理，建议保护系统账户和应用数据目录。
+
+桌面端账户和会话是单机本地功能，不是远程身份认证或多设备同步服务。管理员对本地 SQLite 文件和程序进程的操作权限属于本机安全边界。

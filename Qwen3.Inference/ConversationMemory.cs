@@ -23,6 +23,12 @@ internal sealed class ConversationMemory
 
     public void Clear() => _turns.Clear();
 
+    public void Replace(IEnumerable<ChatTurn> turns)
+    {
+        _turns.Clear();
+        _turns.AddRange(turns);
+    }
+
     public IReadOnlyList<string> RecentAnswers(int count = 3) =>
         _turns.Skip(Math.Max(0, _turns.Count - count - 1)).Take(Math.Max(0, count)).Select(turn => turn.Assistant).ToArray();
 
