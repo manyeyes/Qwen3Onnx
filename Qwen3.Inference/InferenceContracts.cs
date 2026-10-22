@@ -17,7 +17,8 @@ public interface IInferenceEngine : IDisposable
     (string Text, GenerationStats Stats) Generate(
         string prompt,
         GenerationConfig config,
-        Action<string>? onToken = null);
+        Action<string>? onToken = null,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IInferenceEngineFactory

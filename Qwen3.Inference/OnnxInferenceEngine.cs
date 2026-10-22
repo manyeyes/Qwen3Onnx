@@ -170,8 +170,10 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
     public (string Text, GenerationStats Stats) Generate(
         string prompt,
         GenerationConfig config,
-        Action<string>? onToken = null)
+        Action<string>? onToken = null,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(config);
         ValidateGenerationConfig(config);
         var inputIds = EncodeInput(prompt);
@@ -200,6 +202,7 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
 
         for (var step = 0; step < config.MaxNewTokens; step++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             int tokenId;
             if (config.ThinkingBudget > 0 && !thinkClosed && _thinkEndTokenId.HasValue &&
                 step >= config.ThinkingBudget)

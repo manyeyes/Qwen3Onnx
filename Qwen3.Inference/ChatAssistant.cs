@@ -52,8 +52,10 @@ public class ChatAssistant : IDisposable
         Scene? scene = null,
         bool? forceThinkMode = null,
         Action<string>? onToken = null,
-        GenerationConfig? generationConfig = null)
+        GenerationConfig? generationConfig = null,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var cleanedQuestion = TextUtilities.CleanInput(question);
         var detectedScene = scene ?? TextUtilities.DetectScene(cleanedQuestion);
         var effectiveScene = scene ?? detectedScene;
@@ -111,7 +113,8 @@ public class ChatAssistant : IDisposable
                 $"Prompt and KV cache exceed the configured maximum sequence length ({_config.MaxSequenceLength}).");
         }
 
-        var (answer, generationStats) = _engine.Generate(prompt, config, onToken);
+        var (answer, generationStats) = _engine.Generate(prompt, config, onToken, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         var repetitionDetected = false;
         if (config.EnableRepetitionCheck)
         {
