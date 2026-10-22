@@ -138,6 +138,23 @@ public sealed class SqliteDatabaseTests
     }
 
     [TestMethod]
+    public async Task AboutPageCanBeOpenedFromBottomMenu()
+    {
+        using var services = new DesktopServices(_temporaryDirectory);
+        var shell = new MainWindowViewModel(services, new BootstrapResult(null));
+        await shell.Initialization;
+        shell.ToggleBottomMenuCommand.Execute(null);
+
+        Assert.IsTrue(shell.IsBottomMenuOpen);
+        shell.OpenAboutPageCommand.Execute(null);
+
+        Assert.AreSame(shell.About, shell.CurrentViewModel);
+        Assert.IsFalse(shell.IsBottomMenuOpen);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(shell.About.Version));
+        Assert.IsFalse(string.IsNullOrWhiteSpace(shell.About.RuntimeVersion));
+    }
+
+    [TestMethod]
     public async Task TurnAndUsageAreCommittedTogether()
     {
         var model = (await _database.GetModelsAsync(_cancellationToken))[0];
@@ -157,6 +174,23 @@ public sealed class SqliteDatabaseTests
         Assert.AreEqual("user", messages[0].Role);
         Assert.AreEqual("assistant", messages[1].Role);
         Assert.AreEqual("atomic.txt", messages[0].Attachments.Single());
+    }
+
+    [TestMethod]
+    public async Task InterruptedTurnIsPersistedAndMarkedInHistory()
+    {
+        var model = (await _database.GetModelsAsync(_cancellationToken))[0];
+        var conversationId = await _database.SaveTurnAsync(
+            null, null, model.Id, "Interrupted turn", true,
+            "question in progress", [], 4, "partial answer", 2,
+            _cancellationToken, wasInterrupted: true);
+
+        var messages = await _database.GetMessagesAsync(
+            conversationId, null, _cancellationToken);
+        Assert.AreEqual(2, messages.Count);
+        Assert.IsFalse(messages[0].WasInterrupted);
+        Assert.IsTrue(messages[1].WasInterrupted);
+        Assert.AreEqual("partial answer", messages[1].Content);
     }
 
     [TestMethod]
@@ -257,6 +291,33 @@ public sealed class SqliteDatabaseTests
 
         Assert.AreEqual(1, assistant.History.Count);
         Assert.AreEqual("first question", assistant.History[0].User);
+    }
+
+    [TestMethod]
+    public void ChatAssistantKeepsInterruptedPartialAnswerInHistory()
+    {
+        var factory = new TestInferenceEngineFactory();
+        factory.Engine.ReturnInterruptedGeneration = true;
+        using var assistant = new ChatAssistant(
+            new AssistantConfig { EngineId = "test" }, factory);
+        var config = new GenerationConfig
+        {
+            ThinkMode = false,
+            ThinkingBudget = 0,
+            MultiTurn = true,
+            MaxTurns = 3,
+            MaxHistoryChars = 400,
+            MaxHistoryTokens = 1024,
+            ResetOnFactQuestion = false,
+            EnableRepetitionCheck = false,
+            EnableLoopDetection = false
+        };
+
+        var result = assistant.Ask("interrupted question", generationConfig: config);
+
+        Assert.IsTrue(result.Generation.WasCancelled);
+        Assert.AreEqual(1, assistant.History.Count);
+        Assert.AreEqual("test answer", assistant.History[0].Assistant);
     }
 
     [TestMethod]
@@ -448,6 +509,45 @@ public sealed class SqliteDatabaseTests
         Assert.IsTrue(models.All(model => model.HttpFileLinks.Count == 0));
     }
 
+    [TestMethod]
+    public async Task ExistingMessageTableGetsInterruptedStateMigration()
+    {
+        var legacyDirectory = Path.Combine(_temporaryDirectory, "legacy-message-db");
+        Directory.CreateDirectory(legacyDirectory);
+        var legacyPath = Path.Combine(legacyDirectory, "qwen3-desktop.sqlite3");
+        await using (var connection = new SqliteConnection($"Data Source={legacyPath}"))
+        {
+            await connection.OpenAsync(_cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE messages (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    attachments_json TEXT NOT NULL DEFAULT '[]',
+                    token_count INTEGER NOT NULL DEFAULT 0,
+                    created_utc TEXT NOT NULL
+                );
+                """;
+            await command.ExecuteNonQueryAsync(_cancellationToken);
+        }
+
+        var legacyDatabase = new SqliteDatabase(legacyDirectory);
+        await legacyDatabase.InitializeAsync(_cancellationToken);
+        await using var migratedConnection = new SqliteConnection($"Data Source={legacyPath}");
+        await migratedConnection.OpenAsync(_cancellationToken);
+        await using var columns = migratedConnection.CreateCommand();
+        columns.CommandText = "PRAGMA table_info(messages);";
+        await using var reader = await columns.ExecuteReaderAsync(_cancellationToken);
+        var hasInterruptedColumn = false;
+        while (await reader.ReadAsync(_cancellationToken))
+        {
+            hasInterruptedColumn |= reader.GetString(1) == "was_interrupted";
+        }
+        Assert.IsTrue(hasInterruptedColumn);
+    }
+
     private async Task<string> SaveTurnAsync(string? ownerId, string modelId, string content) =>
         await _database.SaveTurnAsync(
             null, ownerId, modelId, $"{content} title", true,
@@ -483,6 +583,7 @@ public sealed class SqliteDatabaseTests
         public string EngineId => "test";
         public long HistoryLength { get; private set; }
         public string LastPrefill { get; private set; } = string.Empty;
+        public bool ReturnInterruptedGeneration { get; set; }
 
         public int CountTokens(string text) => text.Length;
 
@@ -514,6 +615,10 @@ public sealed class SqliteDatabaseTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             onToken?.Invoke("test answer");
+            if (ReturnInterruptedGeneration)
+            {
+                return ("test answer", new GenerationStats(2, 1, 2, 0.5, false, false, true));
+            }
             cancellationToken.ThrowIfCancellationRequested();
             return ("test answer", new GenerationStats(2, 1, 2, 0.5, false, false));
         }

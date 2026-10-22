@@ -13,7 +13,8 @@ public sealed record GenerationStats(
     double TokensPerSecond,
     double AverageTimePerTokenSeconds,
     bool LoopDetected,
-    bool ThinkingBudgetExceeded);
+    bool ThinkingBudgetExceeded,
+    bool WasCancelled = false);
 
 public sealed class OnnxInferenceEngine : IInferenceEngine
 {
@@ -199,12 +200,21 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
         var loopDetected = false;
         var thinkingBudgetExceeded = false;
         var thinkClosed = false;
+        var wasCancelled = false;
+        long generationLimit = config.MaxNewTokens +
+            (config.ThinkMode && config.ThinkingBudget > 0 && _thinkEndTokenId.HasValue
+                ? config.ThinkingBudget
+                : 0);
 
-        for (var step = 0; step < config.MaxNewTokens; step++)
+        for (long step = 0; step < generationLimit; step++)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                wasCancelled = true;
+                break;
+            }
             int tokenId;
-            if (config.ThinkingBudget > 0 && !thinkClosed && _thinkEndTokenId.HasValue &&
+            if (config.ThinkMode && config.ThinkingBudget > 0 && !thinkClosed && _thinkEndTokenId.HasValue &&
                 step >= config.ThinkingBudget)
             {
                 tokenId = _thinkEndTokenId.Value;
@@ -226,6 +236,10 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
             if (_thinkEndTokenId == tokenId)
             {
                 thinkClosed = true;
+                if (config.ThinkMode && config.ThinkingBudget > 0)
+                {
+                    generationLimit = step + config.MaxNewTokens + 1L;
+                }
             }
             if (tokenId is ImEndTokenId or EndOfTextTokenId)
             {
@@ -255,6 +269,7 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
             logits = RunDecoder(GetEmbedding([tokenId]));
         }
 
+        wasCancelled |= cancellationToken.IsCancellationRequested;
         stopwatch.Stop();
         var totalTokens = _generatedTokens.Count;
         var totalSeconds = stopwatch.Elapsed.TotalSeconds;
@@ -264,7 +279,8 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
             totalSeconds > 0 ? totalTokens / totalSeconds : 0,
             totalTokens > 0 ? totalSeconds / totalTokens : 0,
             loopDetected,
-            thinkingBudgetExceeded));
+            thinkingBudgetExceeded,
+            wasCancelled));
     }
 
     public void Dispose()

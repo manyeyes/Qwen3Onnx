@@ -115,6 +115,7 @@ public sealed class SqliteDatabase
                     content TEXT NOT NULL,
                     attachments_json TEXT NOT NULL DEFAULT '[]',
                     token_count INTEGER NOT NULL DEFAULT 0,
+                    was_interrupted INTEGER NOT NULL DEFAULT 0,
                     created_utc TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS ix_messages_conversation_created
@@ -135,10 +136,11 @@ public sealed class SqliteDatabase
 
         await EnsureModelDownloadColumnAsync(connection, cancellationToken);
         await EnsureUserProfileColumnsAsync(connection, cancellationToken);
+        await EnsureInterruptedMessageColumnAsync(connection, cancellationToken);
         await using (var versionCommand = connection.CreateCommand())
         {
             versionCommand.CommandText =
-                "UPDATE app_metadata SET value = '3' WHERE key = 'schema_version';";
+                "UPDATE app_metadata SET value = '4' WHERE key = 'schema_version';";
             await versionCommand.ExecuteNonQueryAsync(cancellationToken);
         }
         await SeedModelsAsync(connection, cancellationToken);
@@ -329,7 +331,8 @@ public sealed class SqliteDatabase
         int promptTokens,
         string assistantContent,
         int completionTokens,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool wasInterrupted = false)
     {
         var id = conversationId ?? Guid.NewGuid().ToString("N");
         var now = DateTimeOffset.UtcNow.ToString("O");
@@ -376,8 +379,9 @@ public sealed class SqliteDatabase
         {
             message.Transaction = (SqliteTransaction)transaction;
             message.CommandText = """
-                INSERT INTO messages(id, conversation_id, role, content, attachments_json, token_count, created_utc)
-                VALUES($id, $conversation, $role, $content, $attachments, $tokens, $created);
+                INSERT INTO messages(id, conversation_id, role, content, attachments_json, token_count,
+                    was_interrupted, created_utc)
+                VALUES($id, $conversation, $role, $content, $attachments, $tokens, $interrupted, $created);
                 """;
             message.Parameters.Add("$id", SqliteType.Text);
             message.Parameters.AddWithValue("$conversation", id);
@@ -385,6 +389,7 @@ public sealed class SqliteDatabase
             message.Parameters.Add("$content", SqliteType.Text);
             message.Parameters.Add("$attachments", SqliteType.Text);
             message.Parameters.Add("$tokens", SqliteType.Integer);
+            message.Parameters.Add("$interrupted", SqliteType.Integer);
             message.Parameters.AddWithValue("$created", now);
 
             message.Parameters["$id"].Value = Guid.NewGuid().ToString("N");
@@ -392,6 +397,7 @@ public sealed class SqliteDatabase
             message.Parameters["$content"].Value = userContent;
             message.Parameters["$attachments"].Value = System.Text.Json.JsonSerializer.Serialize(attachments);
             message.Parameters["$tokens"].Value = Math.Max(0, promptTokens);
+            message.Parameters["$interrupted"].Value = 0;
             await message.ExecuteNonQueryAsync(cancellationToken);
 
             message.Parameters["$id"].Value = Guid.NewGuid().ToString("N");
@@ -399,6 +405,7 @@ public sealed class SqliteDatabase
             message.Parameters["$content"].Value = assistantContent;
             message.Parameters["$attachments"].Value = "[]";
             message.Parameters["$tokens"].Value = Math.Max(0, completionTokens);
+            message.Parameters["$interrupted"].Value = wasInterrupted ? 1 : 0;
             await message.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -443,7 +450,8 @@ public sealed class SqliteDatabase
         string assistantContent,
         int promptTokens,
         int completionTokens,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool wasInterrupted = false)
     {
         var now = DateTimeOffset.UtcNow.ToString("O");
         await using var connection = await OpenAsync(cancellationToken);
@@ -453,7 +461,8 @@ public sealed class SqliteDatabase
         {
             update.Transaction = (SqliteTransaction)transaction;
             update.CommandText = """
-                UPDATE messages SET content = $content, token_count = $tokens, created_utc = $updated
+                UPDATE messages SET content = $content, token_count = $tokens,
+                    was_interrupted = $interrupted, created_utc = $updated
                 WHERE id = $message AND conversation_id = $conversation AND role = 'assistant'
                     AND rowid = (
                         SELECT MAX(rowid) FROM messages
@@ -467,6 +476,7 @@ public sealed class SqliteDatabase
                 """;
             update.Parameters.AddWithValue("$content", assistantContent);
             update.Parameters.AddWithValue("$tokens", Math.Max(0, completionTokens));
+            update.Parameters.AddWithValue("$interrupted", wasInterrupted ? 1 : 0);
             update.Parameters.AddWithValue("$updated", now);
             update.Parameters.AddWithValue("$message", assistantMessageId);
             update.Parameters.AddWithValue("$conversation", conversationId);
@@ -551,7 +561,8 @@ public sealed class SqliteDatabase
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT m.id, m.conversation_id, m.role, m.content, m.attachments_json, m.token_count, m.created_utc
+            SELECT m.id, m.conversation_id, m.role, m.content, m.attachments_json, m.token_count,
+                m.created_utc, m.was_interrupted
             FROM messages m JOIN conversations c ON c.id = m.conversation_id
             WHERE c.id = $conversation AND
                 (($owner IS NULL AND c.owner_user_id IS NULL) OR c.owner_user_id = $owner)
@@ -566,7 +577,7 @@ public sealed class SqliteDatabase
             results.Add(new StoredMessage(
                 reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
                 System.Text.Json.JsonSerializer.Deserialize<string[]>(reader.GetString(4)) ?? [],
-                reader.GetInt32(5), DateTimeOffset.Parse(reader.GetString(6))));
+                reader.GetInt32(5), DateTimeOffset.Parse(reader.GetString(6)), reader.GetInt64(7) != 0));
         }
         return results;
     }
@@ -1008,6 +1019,33 @@ public sealed class SqliteDatabase
             migration.CommandText = sql;
             await migration.ExecuteNonQueryAsync(cancellationToken);
         }
+    }
+
+    private static async Task EnsureInterruptedMessageColumnAsync(
+        SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info(messages);";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var exists = false;
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (string.Equals(reader.GetString(1), "was_interrupted", StringComparison.OrdinalIgnoreCase))
+            {
+                exists = true;
+                break;
+            }
+        }
+        await reader.DisposeAsync();
+        if (exists)
+        {
+            return;
+        }
+
+        await using var migration = connection.CreateCommand();
+        migration.CommandText =
+            "ALTER TABLE messages ADD COLUMN was_interrupted INTEGER NOT NULL DEFAULT 0;";
+        await migration.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private async Task<SqliteConnection> OpenAsync(CancellationToken cancellationToken)

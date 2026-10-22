@@ -26,6 +26,12 @@
 				<EnableTrim>false</EnableTrim>
 				<TrimMode>partial</TrimMode>
 		</PropertyGroup>
+		<ItemGroup>
+		  <AvaloniaXaml Remove="Views\MainWindow - 复制.axaml" />
+		</ItemGroup>
+		<ItemGroup>
+		  <Compile Remove="Views\MainWindow - 复制.axaml.cs" />
+		</ItemGroup>
 
 		<ItemGroup>
 				<ProjectReference Include="..\Qwen3.Inference\Qwen3.Inference.csproj" />

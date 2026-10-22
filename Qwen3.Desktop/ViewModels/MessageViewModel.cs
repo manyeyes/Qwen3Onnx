@@ -30,6 +30,23 @@ public partial class MessageViewModel : ObservableObject
     [ObservableProperty]
     private bool canRegenerate;
 
+    [ObservableProperty]
+    private bool wasInterrupted;
+
+    [ObservableProperty]
+    private bool isTextSelectionMode;
+
+    public string InterruptionLabel => "已停止 · 部分回复已保存";
+    public int BubbleColumn => IsUser ? 1 : 0;
+    public int BubbleColumnSpan => IsUser ? 1 : 3;
+    public double BubbleMaxWidth => IsUser ? 880 : double.PositiveInfinity;
+    public Avalonia.Layout.HorizontalAlignment BubbleAlignment =>
+        IsUser ? Avalonia.Layout.HorizontalAlignment.Right : Avalonia.Layout.HorizontalAlignment.Stretch;
+    public Avalonia.Thickness BubbleMargin => IsUser
+        ? new Avalonia.Thickness(64, 0, 8, 0)
+        : new Avalonia.Thickness(8, 0, 8, 0);
+    public string SelectionModeTooltip => IsTextSelectionMode ? "返回 Markdown 显示" : "切换为可选择文本";
+
     public string MarkdownContent
     {
         get => ExtractAnswer(Content);
@@ -60,18 +77,39 @@ public partial class MessageViewModel : ObservableObject
     public bool HasAttachments => !string.IsNullOrWhiteSpace(AttachmentsText);
     public bool IsAssistant => !IsUser;
     public bool IsNotPending => !IsPending;
+    public bool IsMarkdownVisible => IsNotPending && IsAssistant && !IsTextSelectionMode;
     public string DisplayRole => IsUser ? "用户" : "助手";
+    public string SelectionModeGlyph => IsTextSelectionMode ? "¶" : "▤";
 
     public bool IsUser => Role == "user";
 
     [CommunityToolkit.Mvvm.Input.RelayCommand]
     private void ToggleThinking() => IsThinkingExpanded = !IsThinkingExpanded;
 
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void ToggleTextSelectionMode() => IsTextSelectionMode = !IsTextSelectionMode;
+
+    partial void OnIsTextSelectionModeChanged(bool value) =>
+        OnTextSelectionModeChanged();
+
+    private void OnTextSelectionModeChanged()
+    {
+        OnPropertyChanged(nameof(SelectionModeTooltip));
+        OnPropertyChanged(nameof(SelectionModeGlyph));
+        OnPropertyChanged(nameof(IsMarkdownVisible));
+    }
+
     partial void OnRoleChanged(string value)
     {
         OnPropertyChanged(nameof(IsUser));
         OnPropertyChanged(nameof(IsAssistant));
         OnPropertyChanged(nameof(DisplayRole));
+        OnPropertyChanged(nameof(BubbleColumn));
+        OnPropertyChanged(nameof(BubbleAlignment));
+        OnPropertyChanged(nameof(BubbleMargin));
+        OnPropertyChanged(nameof(IsMarkdownVisible));
+        OnPropertyChanged(nameof(BubbleMaxWidth));
+        OnPropertyChanged(nameof(BubbleColumnSpan));
     }
 
     partial void OnContentChanged(string value)
@@ -86,11 +124,13 @@ public partial class MessageViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(MarkdownContent));
         }
+        OnPropertyChanged(nameof(IsMarkdownVisible));
     }
 
     partial void OnIsPendingChanged(bool value)
     {
         OnPropertyChanged(nameof(IsNotPending));
+        OnPropertyChanged(nameof(IsMarkdownVisible));
         OnPropertyChanged(value ? nameof(StreamingAnswer) : nameof(MarkdownContent));
     }
 

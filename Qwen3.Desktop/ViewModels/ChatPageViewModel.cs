@@ -174,7 +174,8 @@ public partial class ChatPageViewModel : ObservableObject
                         ? GetStoredUserDisplayContent(message.Content)
                         : message.Content,
                     PromptContent = message.Role == "user" ? message.Content : string.Empty,
-                    AttachmentNames = new ObservableCollection<string>(message.Attachments)
+                    AttachmentNames = new ObservableCollection<string>(message.Attachments),
+                    WasInterrupted = message.WasInterrupted
                 }));
             UpdateLatestAssistantAction();
             _attachments.Clear();
@@ -358,7 +359,10 @@ public partial class ChatPageViewModel : ObservableObject
             elapsed.Stop();
             streamUpdater.Complete(result.Assistant.Answer);
             message.IsPending = false;
-            StatusText = FormatGenerationStatus(result.Assistant, elapsed.Elapsed);
+            message.WasInterrupted = result.Assistant.Generation.WasCancelled;
+            StatusText = result.Assistant.Generation.WasCancelled
+                ? "已停止生成，部分回复已保存。"
+                : FormatGenerationStatus(result.Assistant, elapsed.Elapsed);
             UpdateLatestAssistantAction();
             ConversationsChanged?.Invoke();
         }
@@ -482,7 +486,10 @@ public partial class ChatPageViewModel : ObservableObject
             userMessage.PromptContent = result.PromptText;
             streamUpdater.Complete(result.Assistant.Answer);
             assistantMessage.IsPending = false;
-            StatusText = FormatGenerationStatus(result.Assistant, elapsed.Elapsed);
+            assistantMessage.WasInterrupted = result.Assistant.Generation.WasCancelled;
+            StatusText = result.Assistant.Generation.WasCancelled
+                ? "已停止生成，本轮输入与部分回复已保存，可继续对话。"
+                : FormatGenerationStatus(result.Assistant, elapsed.Elapsed);
             UpdateLatestAssistantAction();
             ConversationsChanged?.Invoke();
         }

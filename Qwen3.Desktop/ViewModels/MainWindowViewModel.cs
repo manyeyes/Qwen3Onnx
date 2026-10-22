@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using Qwen3.Desktop.Models;
 using Qwen3.Desktop.Services;
 
@@ -22,6 +23,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool isAuthenticationOpen;
+
+    [ObservableProperty]
+    private bool isBottomMenuOpen;
 
     [ObservableProperty]
     private bool isBootstrapNoticeVisible;
@@ -52,6 +56,7 @@ public partial class MainWindowViewModel : ObservableObject
     public ModelsPageViewModel Models { get; }
     public UsersPageViewModel Users { get; }
     public ProfilePageViewModel Profile { get; }
+    public AboutPageViewModel About { get; }
     public Task Initialization { get; }
     public bool IsAdmin => CurrentUser?.Role == "admin";
     public bool IsGuest => CurrentUser is null;
@@ -59,6 +64,10 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsLoginMode => !IsRegisterMode;
     public bool CanChangeIdentity => !Chat.IsBusy;
     public string IdentityLabel => CurrentUser is null ? "访客模式" : $"账户：{CurrentUser.Username}";
+    public string IdentityInitial => string.IsNullOrEmpty(CurrentUser?.Username)
+        ? "访"
+        : CurrentUser.Username[..1].ToUpperInvariant();
+    public string BottomMenuGlyph => IsBottomMenuOpen ? "⌄" : "⌃";
     public string AuthenticationTitle => IsRegisterMode ? "创建本地账户" : "本地账户登录";
     public string AuthenticationSubmitText => IsRegisterMode ? "注册并登录" : "登录";
     public string AuthenticationToggleText => IsRegisterMode ? "已有账户？返回登录" : "没有账户？立即注册";
@@ -73,6 +82,7 @@ public partial class MainWindowViewModel : ObservableObject
         Models = new ModelsPageViewModel(services, this);
         Users = new UsersPageViewModel(services, this);
         Profile = new ProfilePageViewModel(services, this);
+        About = new AboutPageViewModel();
         CurrentViewModel = Chat;
         GeneratedAdminPassword = bootstrap.GeneratedAdminPassword;
         IsBootstrapNoticeVisible = GeneratedAdminPassword is not null;
@@ -104,15 +114,20 @@ public partial class MainWindowViewModel : ObservableObject
                 CurrentViewModel = Profile;
                 _ = Profile.RefreshAsync();
                 break;
+            case "About":
+                CurrentViewModel = About;
+                break;
             default:
                 StatusMessage = "当前账户无权打开此页面。";
                 return;
         }
 
+        IsBottomMenuOpen = false;
         StatusMessage = string.Empty;
     }
 
     partial void OnIsSidebarExpandedChanged(bool value) => OnPropertyChanged(nameof(SidebarWidth));
+    partial void OnIsBottomMenuOpenChanged(bool value) => OnPropertyChanged(nameof(BottomMenuGlyph));
     partial void OnIsRegisterModeChanged(bool value)
     {
         OnPropertyChanged(nameof(AuthenticationTitle));
@@ -127,6 +142,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsGuest));
         OnPropertyChanged(nameof(IsLoggedIn));
         OnPropertyChanged(nameof(IdentityLabel));
+        OnPropertyChanged(nameof(IdentityInitial));
         Models.NotifyAdminStatusChanged();
         History.NotifyIdentityChanged();
         if (!IsLoggedIn && ReferenceEquals(CurrentViewModel, History))
@@ -183,6 +199,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanChangeIdentity))]
     private void OpenAuthentication()
     {
+        IsBottomMenuOpen = false;
         IsAuthenticationOpen = true;
         IsRegisterMode = false;
         StatusMessage = string.Empty;
@@ -199,6 +216,30 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterPassword = string.Empty;
         RegisterConfirmPassword = string.Empty;
         StatusMessage = string.Empty;
+    }
+
+    [RelayCommand]
+    private void ToggleBottomMenu() => IsBottomMenuOpen = !IsBottomMenuOpen;
+
+    [RelayCommand]
+    private void OpenAboutPage() => Navigate("About");
+
+    [RelayCommand]
+    private void OpenWebsite()
+    {
+        IsBottomMenuOpen = false;
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://manyeyes.github.io/manyspeech/")
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Opening the official website failed");
+            StatusMessage = $"无法打开官网：{exception.Message}";
+        }
     }
 
     [RelayCommand]
@@ -289,6 +330,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanChangeIdentity))]
     private async Task SignOutAsync(CancellationToken cancellationToken)
     {
+        IsBottomMenuOpen = false;
         CurrentUser = null;
         _services.Chat.ClearConversationState();
         await Chat.ChangeIdentityAsync(cancellationToken);
