@@ -91,8 +91,34 @@
             </Border>
           </Grid>
           <StackPanel Spacing="8">
-            <TextBlock Text="常见关键词" FontWeight="SemiBold" Foreground="#344054"/>
-            <TextBlock Text="{Binding KeywordSummary}" Foreground="#475467" TextWrapping="Wrap"/>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="常见关键词" FontWeight="SemiBold" Foreground="#344054"/>
+              <TextBlock Grid.Column="1" Text="按提问与回答词频动态展示"
+                         FontSize="11" Foreground="#98A2B3"/>
+            </Grid>
+            <ItemsControl ItemsSource="{Binding KeywordCloudItems}"
+                          IsVisible="{Binding HasKeywordInsights}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Margin="0,0,8,8" Padding="10,6" CornerRadius="16"
+                          Background="{Binding Background}" ToolTip.Tip="{Binding FrequencyLabel}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Text="{Binding Term}" FontSize="{Binding FontSize}"
+                                 FontWeight="SemiBold" Foreground="{Binding Foreground}"/>
+                      <TextBlock Text="{Binding Count}" FontSize="10" VerticalAlignment="Center"
+                                 Foreground="{Binding Foreground}" Opacity="0.75"/>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="对话积累后，这里会根据提问与回答显示高频关键词。"
+                       IsVisible="{Binding HasNoKeywordInsights}" Foreground="#667085"/>
           </StackPanel>
           <StackPanel Spacing="10">
             <TextBlock Text="领域分布" FontWeight="SemiBold" Foreground="#344054"/>

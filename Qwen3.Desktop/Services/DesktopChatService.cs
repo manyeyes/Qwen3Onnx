@@ -71,10 +71,6 @@ public sealed class DesktopChatService : IDisposable
             {
                 throw new UnauthorizedAccessException("Conversation does not exist or is not accessible to this user.");
             }
-            if (!string.Equals(existing.ModelId, model.Id, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException("The selected model does not match this conversation's model.");
-            }
             title = existing.Title;
             var existingMessages = await _database.GetMessagesAsync(id, ownerUserId, cancellationToken);
             firstTurn = existingMessages.Count == 0;

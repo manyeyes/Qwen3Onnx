@@ -33,6 +33,12 @@ public partial class HistoryPageViewModel : ObservableObject
     [ObservableProperty]
     private string statusText = string.Empty;
 
+    [ObservableProperty]
+    private bool isRenameDialogOpen;
+
+    [ObservableProperty]
+    private bool isDeleteConfirmationOpen;
+
     public bool CanManage => _shell.IsLoggedIn;
     public bool CanEditSelected => CanManage && SelectedConversation is not null;
     public bool HasNoFilteredConversations => FilteredConversations.Count == 0;
@@ -53,10 +59,11 @@ public partial class HistoryPageViewModel : ObservableObject
         {
             return;
         }
-        var ordered = items.OrderByDescending(item => item.UpdatedAt).ToArray();
+        var ordered = items.OrderByDescending(item => item.IsPinned)
+            .ThenByDescending(item => item.UpdatedAt).ToArray();
         var recent = ordered.Take(100).ToArray();
         RecentConversations = new ObservableCollection<ConversationSummary>(recent);
-        Groups = BuildRecentGroups(recent);
+        Groups = BuildRecentGroups(recent.Select(item => new SidebarConversationViewModel(item, this)).ToArray());
         ApplySearch(ordered);
     }
 
@@ -99,9 +106,9 @@ public partial class HistoryPageViewModel : ObservableObject
     [RelayCommand]
     private async Task RenameSelectedAsync(CancellationToken cancellationToken)
     {
-        if (!_shell.IsLoggedIn || SelectedConversation is null)
+        if (SelectedConversation is null)
         {
-            StatusText = "请登录后管理自己的对话。";
+            StatusText = "请选择需要重命名的对话。";
             return;
         }
         try
@@ -109,9 +116,15 @@ public partial class HistoryPageViewModel : ObservableObject
             await _services.Database.RenameConversationAsync(
                 SelectedConversation.Id, _shell.CurrentUser?.Id, TitleDraft, cancellationToken);
             StatusText = "对话标题已更新。";
+            IsRenameDialogOpen = false;
+            var conversationId = SelectedConversation.Id;
             await RefreshAsync(cancellationToken);
             SelectedConversation = RecentConversations.FirstOrDefault(item =>
-                item.Id == SelectedConversation?.Id);
+                item.Id == conversationId);
+            if (_shell.Chat.ConversationId == conversationId)
+            {
+                _shell.Chat.ConversationTitle = SelectedConversation?.Title ?? TitleDraft.Trim();
+            }
         }
         catch (Exception exception)
         {
@@ -123,7 +136,7 @@ public partial class HistoryPageViewModel : ObservableObject
     private async Task DeleteConversationAsync(
         ConversationSummary? conversation, CancellationToken cancellationToken)
     {
-        if (conversation is null || !_shell.IsLoggedIn)
+        if (conversation is null)
         {
             return;
         }
@@ -136,6 +149,7 @@ public partial class HistoryPageViewModel : ObservableObject
                 _shell.Chat.StartNewConversation();
             }
             StatusText = "对话已删除。";
+            IsDeleteConfirmationOpen = false;
             await RefreshAsync(cancellationToken);
         }
         catch (Exception exception)
@@ -144,14 +158,60 @@ public partial class HistoryPageViewModel : ObservableObject
         }
     }
 
+    internal void RequestRename(ConversationSummary conversation)
+    {
+        SelectedConversation = conversation;
+        TitleDraft = conversation.Title;
+        IsRenameDialogOpen = true;
+    }
+
+    internal void RequestDelete(ConversationSummary conversation)
+    {
+        SelectedConversation = conversation;
+        IsDeleteConfirmationOpen = true;
+    }
+
+    [RelayCommand]
+    private Task ConfirmDeleteRequestedAsync(CancellationToken cancellationToken) =>
+        DeleteConversationAsync(SelectedConversation, cancellationToken);
+
+    internal async Task TogglePinnedAsync(
+        ConversationSummary conversation, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _services.Database.SetConversationPinnedAsync(
+                conversation.Id, _shell.CurrentUser?.Id, !conversation.IsPinned, cancellationToken);
+            await RefreshAsync(cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            StatusText = $"置顶状态更新失败：{exception.Message}";
+        }
+    }
+
+    internal async Task OpenSidebarConversationAsync(ConversationSummary conversation)
+    {
+        await OpenConversationAsync(conversation);
+    }
+
+    [RelayCommand]
+    private void CancelRename() => IsRenameDialogOpen = false;
+
+    [RelayCommand]
+    private void CancelDelete() => IsDeleteConfirmationOpen = false;
+
     public void NotifyIdentityChanged()
     {
         Interlocked.Increment(ref _identityVersion);
         OnPropertyChanged(nameof(CanManage));
         OnPropertyChanged(nameof(CanEditSelected));
         RecentConversations.Clear();
+        Groups.Clear();
         FilteredConversations.Clear();
         SelectedConversation = null;
+        IsRenameDialogOpen = false;
+        IsDeleteConfirmationOpen = false;
         StatusText = string.Empty;
     }
 
@@ -165,19 +225,25 @@ public partial class HistoryPageViewModel : ObservableObject
     }
 
     private static ObservableCollection<HistoryGroupViewModel> BuildRecentGroups(
-        IReadOnlyList<ConversationSummary> conversations)
+        IReadOnlyList<SidebarConversationViewModel> conversations)
     {
         var now = DateTimeOffset.Now;
-        var recent = conversations.Where(item => item.UpdatedAt.ToLocalTime() >= now.AddDays(-7));
-        var lastMonth = conversations.Where(item =>
+        var pinned = conversations.Where(item => item.IsPinned).ToArray();
+        var unpinned = conversations.Where(item => !item.IsPinned).ToArray();
+        var recent = unpinned.Where(item => item.UpdatedAt.ToLocalTime() >= now.AddDays(-7));
+        var lastMonth = unpinned.Where(item =>
             item.UpdatedAt.ToLocalTime() < now.AddDays(-7) &&
             item.UpdatedAt.ToLocalTime() >= now.AddDays(-30));
-        var older = conversations.Where(item => item.UpdatedAt.ToLocalTime() < now.AddDays(-30))
+        var older = unpinned.Where(item => item.UpdatedAt.ToLocalTime() < now.AddDays(-30))
             .GroupBy(item => item.UpdatedAt.ToLocalTime().ToString("yyyy年MM月"))
             .OrderByDescending(group => group.Key, StringComparer.Ordinal)
             .Select(group => new HistoryGroupViewModel(group.Key, group));
 
         var groups = new List<HistoryGroupViewModel>();
+        if (pinned.Length > 0)
+        {
+            groups.Add(new HistoryGroupViewModel("置顶", pinned));
+        }
         if (recent.Any())
         {
             groups.Add(new HistoryGroupViewModel("7 天内", recent));

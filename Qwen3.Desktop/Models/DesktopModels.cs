@@ -25,11 +25,13 @@ public sealed record UserProfile(
 
 public sealed record UserDomainInsight(string Name, int Count, double Percentage);
 
+public sealed record UserKeywordInsight(string Term, int Count);
+
 public sealed record UserInsights(
     int ConversationCount,
     int MessageCount,
     long TokensUsed,
-    IReadOnlyList<string> Keywords,
+    IReadOnlyList<UserKeywordInsight> Keywords,
     IReadOnlyList<UserDomainInsight> Domains);
 
 public sealed record ModelDefinition(
@@ -43,7 +45,10 @@ public sealed record ModelDefinition(
     string EmbeddingFileName,
     string DecoderFileName,
     IReadOnlyList<string> RequiredFiles,
-    IReadOnlyList<ModelFileLink> HttpFileLinks);
+    IReadOnlyList<ModelFileLink> HttpFileLinks)
+{
+    public string InstallationStatus => IsInstalled ? "已安装" : "未安装";
+}
 
 public sealed record ModelFileLink(string Path, string Url, long Size = 0, string? Sha256 = null);
 
@@ -55,7 +60,8 @@ public sealed record ConversationSummary(
     string? OwnerUserId,
     string ModelId,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    bool IsPinned = false);
 
 public sealed record StoredMessage(
     string Id,

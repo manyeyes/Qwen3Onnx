@@ -11,6 +11,7 @@ public partial class MainWindowViewModel : ObservableObject
 {
     private readonly DesktopServices _services;
     private readonly ILogger<MainWindowViewModel> _logger;
+    private double _expandedSidebarWidth = 250;
 
     [ObservableProperty]
     private object currentViewModel = null!;
@@ -20,6 +21,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool isSidebarExpanded = true;
+
+    [ObservableProperty]
+    private double sidebarWidth = 250;
 
     [ObservableProperty]
     private bool isAuthenticationOpen;
@@ -71,8 +75,6 @@ public partial class MainWindowViewModel : ObservableObject
     public string AuthenticationTitle => IsRegisterMode ? "创建本地账户" : "本地账户登录";
     public string AuthenticationSubmitText => IsRegisterMode ? "注册并登录" : "登录";
     public string AuthenticationToggleText => IsRegisterMode ? "已有账户？返回登录" : "没有账户？立即注册";
-    public double SidebarWidth => IsSidebarExpanded ? 250 : 72;
-
     public MainWindowViewModel(DesktopServices services, BootstrapResult bootstrap)
     {
         _services = services;
@@ -126,7 +128,24 @@ public partial class MainWindowViewModel : ObservableObject
         StatusMessage = string.Empty;
     }
 
-    partial void OnIsSidebarExpandedChanged(bool value) => OnPropertyChanged(nameof(SidebarWidth));
+    partial void OnIsSidebarExpandedChanged(bool value) =>
+        SidebarWidth = value ? _expandedSidebarWidth : 72;
+
+    partial void OnSidebarWidthChanged(double value)
+    {
+        if (IsSidebarExpanded)
+        {
+            _expandedSidebarWidth = value;
+        }
+    }
+
+    public void SetSidebarWidth(double width)
+    {
+        if (IsSidebarExpanded)
+        {
+            SidebarWidth = Math.Clamp(width, 200, 440);
+        }
+    }
     partial void OnIsBottomMenuOpenChanged(bool value) => OnPropertyChanged(nameof(BottomMenuGlyph));
     partial void OnIsRegisterModeChanged(bool value)
     {

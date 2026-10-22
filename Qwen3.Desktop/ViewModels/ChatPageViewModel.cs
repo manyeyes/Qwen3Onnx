@@ -553,8 +553,7 @@ public partial class ChatPageViewModel : ObservableObject
         OnPropertyChanged(nameof(CanSend));
         if (!_syncing && ConversationId is not null && value is not null)
         {
-            StartNewConversation();
-            StatusText = "模型已更换，已开始新对话。";
+            StatusText = "模型已切换，后续消息会继续保存在当前对话中。";
         }
     }
 
