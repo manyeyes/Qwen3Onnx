@@ -54,6 +54,8 @@ static RootCommand BuildCommand()
     var maxHistoryChars = IntegerOption("--max-history-chars", "Maximum characters kept per assistant history entry.");
     var maxHistoryTokens = IntegerOption("--max-history-tokens", "Maximum token count retained in conversation history.");
     var topK = IntegerOption("--top-k", "Top-k sampling limit; zero disables top-k filtering.");
+    var intraOpThreads = IntegerOption("--intra-op-threads", "ONNX Runtime intra-op CPU threads; defaults to half the logical CPU count.");
+    var interOpThreads = IntegerOption("--inter-op-threads", "ONNX Runtime inter-op CPU threads; defaults to 1.");
     var loopCheckWindow = IntegerOption("--loop-check-window", "Number of recent generated tokens checked for loops.");
     var loopRepeatThreshold = IntegerOption("--loop-repeat-threshold", "Repeated token-pattern count that stops generation.");
 
@@ -94,6 +96,8 @@ static RootCommand BuildCommand()
     root.Options.Add(maxHistoryChars);
     root.Options.Add(maxHistoryTokens);
     root.Options.Add(topK);
+    root.Options.Add(intraOpThreads);
+    root.Options.Add(interOpThreads);
     root.Options.Add(loopCheckWindow);
     root.Options.Add(loopRepeatThreshold);
     root.Options.Add(temperature);
@@ -140,7 +144,7 @@ static RootCommand BuildCommand()
         parseResult,
         question, modelPath, engineId, scene, thinkMode, systemPrompt, logLevel, logFile,
         maxNewTokens, thinkingBudget, maxTurns, maxHistoryChars, maxHistoryTokens,
-        topK, loopCheckWindow, loopRepeatThreshold, temperature, topP,
+        topK, intraOpThreads, interOpThreads, loopCheckWindow, loopRepeatThreshold, temperature, topP,
         repetitionPenalty, repetitionThreshold, multiTurn, singleTurn, stream, noStream,
         doSample, noSample, showThinking, hideThinking, stripThinking, keepThinking,
         sanitizeHistory, noSanitizeHistory, resetOnFact, noResetOnFact,
@@ -184,6 +188,8 @@ static int Execute(
     Option<int?> maxHistoryCharsOption,
     Option<int?> maxHistoryTokensOption,
     Option<int?> topKOption,
+    Option<int?> intraOpThreadsOption,
+    Option<int?> interOpThreadsOption,
     Option<int?> loopCheckWindowOption,
     Option<int?> loopRepeatThresholdOption,
     Option<double?> temperatureOption,
@@ -276,21 +282,33 @@ static int Execute(
         };
         ValidateGenerationConfig(generationConfig);
 
+        string modelPath = Path.GetFullPath(parse.GetValue(modelPathOption) ??
+            Environment.GetEnvironmentVariable("QWEN_MODEL_PATH") ??
+            Path.Combine(AppContext.BaseDirectory, "models", "Qwen3-0.6b-int8-onnx"));
+        var intraOpNumThreads = PositiveOptionValue(
+            parse, intraOpThreadsOption, new AssistantConfig().IntraOpNumThreads, "--intra-op-threads");
+        var interOpNumThreads = PositiveOptionValue(
+            parse, interOpThreadsOption, 1, "--inter-op-threads");
+
         var assistantConfig = new AssistantConfig
         {
             EngineId = parse.GetValue(engineOption) ?? "qwen3-onnx",
-            ModelPath = Path.GetFullPath(parse.GetValue(modelPathOption) ??
-                Environment.GetEnvironmentVariable("QWEN_MODEL_PATH") ??
-                Path.Combine(AppContext.BaseDirectory, "models", "Qwen3-1.7b-int8-onnx")),
-            SystemPrompt = generationConfig.SystemPrompt ?? "You are a helpful assistant."
+            ModelPath = modelPath,
+            DecoderModelName = ResolveModelFile(modelPath, "decoder"),
+            EmbeddingModelName = ResolveModelFile(modelPath, "embedding"),
+            SystemPrompt = generationConfig.SystemPrompt ?? "You are a helpful assistant.",
+            IntraOpNumThreads = intraOpNumThreads,
+            InterOpNumThreads = interOpNumThreads
         };
 
         logger.LogInformation(
-            "Starting inference. Engine={EngineId}, Scene={Scene}, ModelPath={ModelPath}",
-            assistantConfig.EngineId, GenerationConfig.GetSceneName(scene), assistantConfig.ModelPath);
+            "Starting inference. Engine={EngineId}, Scene={Scene}, ModelPath={ModelPath}, IntraOpThreads={IntraOpThreads}, InterOpThreads={InterOpThreads}",
+            assistantConfig.EngineId, GenerationConfig.GetSceneName(scene), assistantConfig.ModelPath,
+            assistantConfig.IntraOpNumThreads, assistantConfig.InterOpNumThreads);
+        using var tokenWriter = new ThinkingOutputFilter.BufferedConsoleWriter(Console.Out);
         var thinkingFilter = generationConfig.ShowThinking
             ? null
-            : new ThinkingOutputFilter(Console.Out);
+            : new ThinkingOutputFilter(tokenWriter);
         using var assistant = new ChatAssistant(
             assistantConfig,
             new InferenceEngineFactory(loggerFactory),
@@ -303,7 +321,7 @@ static int Execute(
             {
                 if (thinkingFilter is null)
                 {
-                    Console.Out.Write(token);
+                    tokenWriter.Write(token);
                 }
                 else
                 {
@@ -313,6 +331,7 @@ static int Execute(
         if (generationConfig.Stream)
         {
             thinkingFilter?.Complete();
+            tokenWriter.Flush();
             Console.Out.WriteLine();
         }
         else
@@ -374,6 +393,40 @@ static bool ResolveToggle(
     parse.GetValue(enableOption) ? true :
     parse.GetValue(disableOption) ? false : defaultValue;
 
+static int PositiveOptionValue(
+    System.CommandLine.ParseResult parse,
+    Option<int?> option,
+    int defaultValue,
+    string optionName)
+{
+    var value = parse.GetValue(option) ?? defaultValue;
+    ArgumentOutOfRangeException.ThrowIfNegativeOrZero(value, optionName);
+    return value;
+}
+
+static string ResolveModelFile(string modelPath, string component)
+{
+    var preferW4A32 = modelPath.Contains("w4a32", StringComparison.OrdinalIgnoreCase);
+    var preferInt8 = modelPath.Contains("int8", StringComparison.OrdinalIgnoreCase);
+    var variants = preferW4A32
+        ? new[] { "w4a32", "int8", "int4" }
+        : preferInt8
+            ? new[] { "int8", "w4a32", "int4" }
+            : new[] { "int4", "w4a32", "int8" };
+    foreach (var variant in variants)
+    {
+        var fileName = $"{component}.{variant}.onnx";
+        if (File.Exists(Path.Combine(modelPath, fileName)))
+        {
+            return fileName;
+        }
+    }
+
+    throw new FileNotFoundException(
+        $"The model directory does not contain a supported {component} ONNX file.",
+        Path.Combine(modelPath, $"{component}.{variants[0]}.onnx"));
+}
+
 static void ValidateGenerationConfig(GenerationConfig config)
 {
     ArgumentOutOfRangeException.ThrowIfNegativeOrZero(config.MaxNewTokens, "--max-new-tokens");
@@ -415,6 +468,80 @@ internal sealed class ThinkingOutputFilter(TextWriter writer)
         ObjectDisposedException.ThrowIf(_completed, this);
         _pending.Append(text);
         Process(final: false);
+    }
+
+    internal sealed class BufferedConsoleWriter : TextWriter
+    {
+        private readonly TextWriter _writer;
+        private readonly StringBuilder _buffer = new();
+        private readonly object _gate = new();
+        private readonly Timer _timer;
+        private bool _disposed;
+
+        public BufferedConsoleWriter(TextWriter writer)
+        {
+            _writer = writer;
+            _timer = new Timer(_ => Flush(), null, 50, 50);
+        }
+
+        public override Encoding Encoding => _writer.Encoding;
+
+        public override void Write(string? value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return;
+            }
+            lock (_gate)
+            {
+                if (!_disposed)
+                {
+                    _buffer.Append(value);
+                }
+            }
+        }
+
+        public override void Flush()
+        {
+            lock (_gate)
+            {
+                if (_buffer.Length == 0)
+                {
+                    return;
+                }
+                _writer.Write(_buffer.ToString());
+                _buffer.Clear();
+                _writer.Flush();
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                lock (_gate)
+                {
+                    if (!_disposed)
+                    {
+                        _disposed = true;
+                        _timer.Dispose();
+                        FlushBuffer();
+                    }
+                }
+            }
+            base.Dispose(disposing);
+        }
+
+        private void FlushBuffer()
+        {
+            if (_buffer.Length == 0)
+            {
+                return;
+            }
+            _writer.Write(_buffer.ToString());
+            _buffer.Clear();
+            _writer.Flush();
+        }
     }
 
     public void Complete()

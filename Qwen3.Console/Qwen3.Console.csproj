@@ -1,39 +1,28 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+		<PropertyGroup>
+				<!-- 基础元信息 -->
+				<AssemblyName>Qwen3.Console</AssemblyName>
+				<RootNamespace>Qwen3.Console</RootNamespace>
+				<Title>Qwen3 Console</Title>
+				<Description>Console demo for Qwen3 ONNX inference</Description>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Qwen3.Inference\Qwen3.Inference.csproj" />
-  </ItemGroup>
+				<OutputType>Exe</OutputType>
+				<TargetFramework>net8.0</TargetFramework>
+				<ImplicitUsings>enable</ImplicitUsings>
+				<Nullable>enable</Nullable>
+		</PropertyGroup>
 
-  <ItemGroup>
-    <Folder Include="models\" />
-  </ItemGroup>
+		<ItemGroup>
+				<ProjectReference Include="..\Qwen3.Inference\Qwen3.Inference.csproj" />
+		</ItemGroup>
 
-  <ItemGroup>
-    <None Update="models\Qwen3-0.6B-int8-onnx\config.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="models\Qwen3-0.6B-int8-onnx\decoder.int8.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="models\Qwen3-0.6B-int8-onnx\decoder.int8.onnx.data">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="models\Qwen3-0.6B-int8-onnx\embedding.int8.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="models\Qwen3-0.6B-int8-onnx\tokenizer.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="models\Qwen3-0.6B-int8-onnx\vocab.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
-
+		<!-- 显式指定两个模型文件夹，目录内所有文件递归复制 -->
+		<ItemGroup>
+				<None Update="models\Qwen3-0.6B-int4-onnx\**\*">
+						<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+				</None>
+				<None Update="models\Qwen3-0.6B-int8-onnx\**\*">
+						<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+				</None>
+		</ItemGroup>
 </Project>
