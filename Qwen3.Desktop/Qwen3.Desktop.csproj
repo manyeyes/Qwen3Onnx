@@ -12,9 +12,9 @@
 				<Title>Qwen3 Desktop</Title>
 				<Description>Avalonia-based cross-platform desktop UI for Qwen3 ONNX inference</Description>
 				<Authors>manyeyes and contributors</Authors>
-				<Version>0.2.0</Version>
-				<AssemblyVersion>0.2.0.0</AssemblyVersion>
-				<FileVersion>0.2.0.0</FileVersion>
+				<Version>0.3.0</Version>
+				<AssemblyVersion>0.3.0.0</AssemblyVersion>
+				<FileVersion>0.3.0.0</FileVersion>
 				<Copyright>Copyright © manyeyes and contributors 2026</Copyright>
 				<RepositoryUrl>https://github.com/manyeyes/Qwen3Onnx</RepositoryUrl>
 				<RepositoryType>git</RepositoryType>
@@ -26,12 +26,6 @@
 				<EnableTrim>false</EnableTrim>
 				<TrimMode>partial</TrimMode>
 		</PropertyGroup>
-		<ItemGroup>
-		  <AvaloniaXaml Remove="Views\MainWindow - 复制.axaml" />
-		</ItemGroup>
-		<ItemGroup>
-		  <Compile Remove="Views\MainWindow - 复制.axaml.cs" />
-		</ItemGroup>
 
 		<ItemGroup>
 				<ProjectReference Include="..\Qwen3.Inference\Qwen3.Inference.csproj" />

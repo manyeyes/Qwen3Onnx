@@ -345,7 +345,8 @@ public partial class ChatPageViewModel : ObservableObject
         message.IsPending = true;
         StatusText = "正在重新生成回复…";
         var elapsed = Stopwatch.StartNew();
-        using var streamUpdater = new StreamingMessageUpdater(message);
+        using var streamUpdater = new StreamingMessageUpdater(
+            message, exception => _logger.LogError(exception, "Parsing streamed reply failed"));
 
         try
         {
@@ -357,8 +358,7 @@ public partial class ChatPageViewModel : ObservableObject
                 streamUpdater.Append,
                 generationCancellation.Token);
             elapsed.Stop();
-            streamUpdater.Complete(result.Assistant.Answer);
-            message.IsPending = false;
+            await streamUpdater.CompleteAsync(result.Assistant.Answer);
             message.WasInterrupted = result.Assistant.Generation.WasCancelled;
             StatusText = result.Assistant.Generation.WasCancelled
                 ? "已停止生成，部分回复已保存。"
@@ -464,7 +464,8 @@ public partial class ChatPageViewModel : ObservableObject
         UpdateLatestAssistantAction();
         StatusText = "正在加载模型并生成回答…";
         var elapsed = Stopwatch.StartNew();
-        using var streamUpdater = new StreamingMessageUpdater(assistantMessage);
+        using var streamUpdater = new StreamingMessageUpdater(
+            assistantMessage, exception => _logger.LogError(exception, "Parsing streamed reply failed"));
 
         try
         {
@@ -484,8 +485,7 @@ public partial class ChatPageViewModel : ObservableObject
             ConversationId = result.Conversation.Id;
             ConversationTitle = result.Conversation.Title;
             userMessage.PromptContent = result.PromptText;
-            streamUpdater.Complete(result.Assistant.Answer);
-            assistantMessage.IsPending = false;
+            await streamUpdater.CompleteAsync(result.Assistant.Answer);
             assistantMessage.WasInterrupted = result.Assistant.Generation.WasCancelled;
             StatusText = result.Assistant.Generation.WasCancelled
                 ? "已停止生成，本轮输入与部分回复已保存，可继续对话。"
@@ -596,16 +596,21 @@ public partial class ChatPageViewModel : ObservableObject
     private sealed class StreamingMessageUpdater : IDisposable
     {
         private readonly MessageViewModel _message;
+        private readonly Action<Exception> _onParseError;
         private readonly object _gate = new();
-        private readonly StringBuilder _pending = new();
-        private readonly Timer _timer;
-        private int _flushScheduled;
+        private readonly StringBuilder _pendingContent = new();
+        private readonly MessageViewModel.StreamingContentParser _parser = new();
+        private readonly DispatcherTimer _timer;
+        private bool _flushScheduled;
         private bool _stopped;
 
-        public StreamingMessageUpdater(MessageViewModel message)
+        public StreamingMessageUpdater(MessageViewModel message, Action<Exception> onParseError)
         {
             _message = message;
-            _timer = new Timer(_ => ScheduleFlush(), null, 100, 100);
+            _onParseError = onParseError;
+            _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+            _timer.Tick += OnTimerTick;
+            _timer.Start();
         }
 
         public void Append(string token)
@@ -614,15 +619,23 @@ public partial class ChatPageViewModel : ObservableObject
             {
                 if (!_stopped)
                 {
-                    _pending.Append(token);
+                    _pendingContent.Append(token);
                 }
             }
         }
 
-        public void Complete(string finalContent)
+        public async Task CompleteAsync(string finalContent)
         {
             Stop();
-            _message.Content = finalContent;
+            var parsed = await Task.Run(
+                () => MessageViewModel.ParseStreamingContent(finalContent));
+            await Dispatcher.UIThread.InvokeAsync(
+                () =>
+                {
+                    _message.ApplyStreamingSnapshot(parsed.Thinking, parsed.Answer);
+                    _message.Content = finalContent;
+                    _message.IsPending = false;
+                });
         }
 
         public void Stop()
@@ -630,44 +643,60 @@ public partial class ChatPageViewModel : ObservableObject
             lock (_gate)
             {
                 _stopped = true;
-                _pending.Clear();
             }
-            _timer.Dispose();
+            _timer.Stop();
+            _timer.Tick -= OnTimerTick;
         }
 
         public void Dispose() => Stop();
 
-        private void ScheduleFlush()
+        private void OnTimerTick(object? sender, EventArgs eventArgs)
         {
+            string snapshot;
             lock (_gate)
             {
-                if (_stopped || _pending.Length == 0 ||
-                    Interlocked.Exchange(ref _flushScheduled, 1) != 0)
+                if (_stopped || _flushScheduled || _pendingContent.Length == 0)
                 {
                     return;
                 }
+                _flushScheduled = true;
+                snapshot = _pendingContent.ToString();
+                _pendingContent.Clear();
             }
-            Dispatcher.UIThread.Post(Flush);
+
+            _ = ParseSnapshotAsync(snapshot);
         }
 
-        private void Flush()
+        private async Task ParseSnapshotAsync(string snapshot)
         {
-            string text;
-            lock (_gate)
+            (string Thinking, string Answer) parsed;
+            try
             {
-                if (_stopped)
+                parsed = await Task.Run(() => _parser.Append(snapshot));
+            }
+            catch (Exception exception)
+            {
+                lock (_gate)
                 {
-                    Interlocked.Exchange(ref _flushScheduled, 0);
-                    return;
+                    _flushScheduled = false;
                 }
-                text = _pending.ToString();
-                _pending.Clear();
+                _onParseError(exception);
+                return;
             }
-            if (text.Length > 0)
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                _message.Content += text;
-            }
-            Interlocked.Exchange(ref _flushScheduled, 0);
+                var applySnapshot = false;
+                lock (_gate)
+                {
+                    applySnapshot = !_stopped;
+                    _flushScheduled = false;
+                }
+                if (applySnapshot)
+                {
+                    _message.ApplyStreamingSnapshot(parsed.Thinking, parsed.Answer);
+                }
+            });
         }
     }
 
