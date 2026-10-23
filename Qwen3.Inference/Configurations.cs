@@ -9,7 +9,7 @@ public sealed class AssistantConfig
     public string DecoderModelName { get; init; } = "decoder.int8.onnx";
     public string SystemPrompt { get; init; } = "You are a helpful assistant.";
     public int MaxSequenceLength { get; init; } = 4096;
-    public int IntraOpNumThreads { get; init; } = 4;
+    public int IntraOpNumThreads { get; init; } = Math.Max(1, Environment.ProcessorCount / 2);
     public int InterOpNumThreads { get; init; } = 1;
 
     public string TokenizerPath => Path.Combine(ModelPath, "tokenizer.json");
