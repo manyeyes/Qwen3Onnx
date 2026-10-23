@@ -5,7 +5,14 @@ var modelPath = args.Length > 0
     : Environment.GetEnvironmentVariable("QWEN_MODEL_PATH") ??
       Path.Combine(AppContext.BaseDirectory, "models", "Qwen3-0.6b-int8-onnx");
 
-var assistantConfig = new AssistantConfig { ModelPath = modelPath };
+var assistantConfig = new AssistantConfig
+{
+    EngineId = "qwen3-onnx",
+    ModelPath = modelPath,
+    DecoderModelName = ResolveModelFile(modelPath, "decoder"),
+    EmbeddingModelName = ResolveModelFile(modelPath, "embedding"),
+    SystemPrompt = "You are a helpful assistant."
+};
 var requiredModelFiles = new[]
 {
     assistantConfig.TokenizerPath,
@@ -145,8 +152,10 @@ static void RunChat(ChatAssistant assistant, AssistantConfig config)
             }
 
             Console.Write("助手: ");
+            using var tokenWriter = new BufferedConsoleWriter(Console.Out);
             var result = assistant.Ask(question, sceneOverride, thinkOverride,
-                token => Console.Write(token));
+                token => tokenWriter.Write(token));
+            tokenWriter.Flush();
             Console.WriteLine();
             PrintStats(result);
         }
@@ -239,4 +248,101 @@ static void PrintHelp()
     Console.WriteLine("思考模式: think:on <问题> | think:off <问题> | /think on | /think off | /think auto");
     Console.WriteLine("指定场景: scene:fast_qa <问题>（也支持 deep、roleplay、precise、chitchat）");
     Console.WriteLine("直接输入问题将自动判断场景。");
+}
+
+static string ResolveModelFile(string modelPath, string component)
+{
+    var preferW4A32 = modelPath.Contains("w4a32", StringComparison.OrdinalIgnoreCase);
+    var preferInt8 = modelPath.Contains("int8", StringComparison.OrdinalIgnoreCase);
+    var variants = preferW4A32
+        ? new[] { "w4a32", "int8", "int4" }
+        : preferInt8
+            ? new[] { "int8", "w4a32", "int4" }
+            : new[] { "int4", "w4a32", "int8" };
+    foreach (var variant in variants)
+    {
+        var fileName = $"{component}.{variant}.onnx";
+        if (File.Exists(Path.Combine(modelPath, fileName)))
+        {
+            return fileName;
+        }
+    }
+
+    throw new FileNotFoundException(
+        $"模型目录缺少受支持的 {component} ONNX 文件。",
+        Path.Combine(modelPath, $"{component}.{variants[0]}.onnx"));
+}
+
+sealed class BufferedConsoleWriter : TextWriter
+{
+    private readonly TextWriter _writer;
+    private readonly System.Text.StringBuilder _buffer = new();
+    private readonly object _gate = new();
+    private readonly Timer _timer;
+    private bool _disposed;
+
+    public BufferedConsoleWriter(TextWriter writer)
+    {
+        _writer = writer;
+        _timer = new Timer(_ => Flush(), null, 50, 50);
+    }
+
+    public override System.Text.Encoding Encoding => _writer.Encoding;
+
+    public override void Write(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return;
+        }
+        lock (_gate)
+        {
+            if (!_disposed)
+            {
+                _buffer.Append(value);
+            }
+        }
+    }
+
+    public override void Flush()
+    {
+        lock (_gate)
+        {
+            if (_buffer.Length == 0)
+            {
+                return;
+            }
+            _writer.Write(_buffer.ToString());
+            _buffer.Clear();
+            _writer.Flush();
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            lock (_gate)
+            {
+                if (!_disposed)
+                {
+                    _disposed = true;
+                    _timer.Dispose();
+                    FlushBuffer();
+                }
+            }
+        }
+        base.Dispose(disposing);
+    }
+
+    private void FlushBuffer()
+    {
+        if (_buffer.Length == 0)
+        {
+            return;
+        }
+        _writer.Write(_buffer.ToString());
+        _buffer.Clear();
+        _writer.Flush();
+    }
 }

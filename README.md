@@ -111,6 +111,7 @@ dotnet run --project Qwen3.Console -- "D:\models\Qwen3-0.6B-int8-onnx"
 | 采样 | `--max-new-tokens`、`--temperature`、`--top-p`、`--top-k`、`--sample` / `--no-sample`、`--repetition-penalty` |
 | 思考与历史 | `--thinking-budget`、`--show-thinking` / `--hide-thinking`、`--multi-turn` / `--single-turn`、`--max-turns`、`--max-history-chars`、`--max-history-tokens` |
 | 质量保护 | `--repetition-check` / `--no-repetition-check`、`--repetition-threshold`、`--loop-detection` / `--no-loop-detection`、`--loop-check-window`、`--loop-repeat-threshold` |
+| CPU 调优 | `--intra-op-threads`、`--inter-op-threads` |
 | 历史策略 | `--strip-thinking-in-history` / `--keep-thinking-in-history`、`--sanitize-history` / `--no-sanitize-history`、`--reset-on-fact-question` / `--no-reset-on-fact-question` |
 | 输出与日志 | `--stream` / `--no-stream`、`--log-level`、`--log-file` |
 | 帮助 | `--help`、`-h`、`-?`、`--version` |
@@ -159,7 +160,7 @@ Console.WriteLine($"生成速度：{result.Generation.TokensPerSecond:F1} tokens
 
 - 目标框架：.NET 8
 - 命令行：`System.CommandLine 2.0.13`
-- 推理：`Microsoft.ML.OnnxRuntime 1.23.2`
+- 推理：`Microsoft.ML.OnnxRuntime 1.31.0`
 - Tokenizer：`Tokenizers.DotNet 1.4.1`
 - 日志：`Microsoft.Extensions.Logging.Console 9.0.0`
 

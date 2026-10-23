@@ -127,7 +127,7 @@ Qwen3.Console ───┘                                         └── Onn
 | 组件 | 当前版本 | 用途 |
 | --- | --- | --- |
 | `System.CommandLine` | 2.0.13 | CLI 参数、帮助、解析与选项校验 |
-| `Microsoft.ML.OnnxRuntime` | 1.23.2 | ONNX 模型执行 |
+| `Microsoft.ML.OnnxRuntime` | 1.31.0 | ONNX 模型执行 |
 | `Tokenizers.DotNet` | 1.4.1 | 载入 Hugging Face `tokenizer.json` 并执行编码/解码 |
 | `Tokenizers.DotNet.runtime.*` | 1.4.1 | Windows x64、Linux x64/arm64、macOS x64/arm64 Tokenizer 原生运行时 |
 | `Microsoft.Extensions.Logging.Abstractions` | 9.0.0 | 推理类库日志抽象 |
@@ -279,7 +279,22 @@ dotnet run --project Qwen3.Cli -- "你好" --no-stream
 
 CLI 按场景默认值决定流式方式；命令行显式给出正反选项可覆盖默认值。流式输出写入标准输出，日志写入标准错误。
 
-### 7.5 日志
+### 7.5 CPU 线程调优
+
+推理引擎默认将 ONNX Runtime 的 intra-op 线程设为逻辑 CPU 数的一半（至少 1），inter-op 线程设为 1。可根据 CPU、模型量化格式和并发负载显式调整：
+
+```powershell
+dotnet run --project Qwen3.Cli -- "解释 ONNX Runtime" `
+  --intra-op-threads 8 `
+  --inter-op-threads 1
+```
+
+- `--intra-op-threads` 控制单个 ONNX 算子内部的并行线程；该值对 CPU 推理吞吐影响较大。
+- `--inter-op-threads` 控制不同 ONNX 算子之间的并行度。当前图按顺序执行，通常保持为 `1`。
+- 线程越多不一定越快；超出适合当前 CPU 和模型的线程数可能造成线程调度、内存带宽争用和吞吐下降。可用相同模型、提示词和生成参数对比基准后再调整。
+- CLI 启动日志会记录最终采用的线程数。控制台与桌面端通过 `AssistantConfig` 使用相同的默认值；C# 集成时也可覆盖这两个属性。
+
+### 7.6 日志
 
 ```powershell
 dotnet run --project Qwen3.Cli -- "测试问题" `
@@ -293,7 +308,7 @@ dotnet run --project Qwen3.Cli -- "测试问题" `
 - 文件日志包含 UTC 时间、等级、类别、事件 ID、格式化消息和异常文本。
 - 日志可能包含模型目录路径和异常诊断信息。共享日志前请检查其中是否存在不应公开的信息。
 
-### 7.6 CLI 退出码
+### 7.7 CLI 退出码
 
 | 退出码 | 说明 |
 | --- | --- |
@@ -363,6 +378,8 @@ dotnet run --project Qwen3.Cli -- "测试问题" `
 | `--scene` | 场景名；缺省时自动检测 |
 | `--log-level` | 最低日志等级；默认 `information` |
 | `--log-file` | 追加 JSON Lines 日志的路径 |
+| `--intra-op-threads` | ONNX Runtime 算子内部 CPU 线程数；默认逻辑 CPU 数的一半 |
+| `--inter-op-threads` | ONNX Runtime 算子间 CPU 线程数；默认 `1` |
 | `--help`、`-h`、`-?` | 显示帮助 |
 | `--version` | 显示 CLI 程序版本 |
 
@@ -473,7 +490,7 @@ var config = new AssistantConfig
     ModelPath = @"D:\models\Qwen3-0.6B-int8-onnx",
     SystemPrompt = "You are a helpful assistant.",
     MaxSequenceLength = 4096,
-    IntraOpNumThreads = 4,
+    IntraOpNumThreads = Math.Max(1, Environment.ProcessorCount / 2),
     InterOpNumThreads = 1
 };
 

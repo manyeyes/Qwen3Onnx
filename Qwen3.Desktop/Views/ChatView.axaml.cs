@@ -1,5 +1,4 @@
 using Avalonia.Controls;
-using Avalonia.Threading;
 using Qwen3.Desktop.ViewModels;
 
 namespace Qwen3.Desktop.Views;
@@ -12,7 +11,7 @@ public sealed partial class ChatView : UserControl
     {
         if (sender is ScrollViewer { DataContext: MessageViewModel { IsPending: true } } scrollViewer)
         {
-            Dispatcher.UIThread.Post(scrollViewer.ScrollToEnd);
+            scrollViewer.ScrollToEnd();
         }
     }
 }
