@@ -170,6 +170,55 @@ public sealed class SqliteDatabaseTests
     }
 
     [TestMethod]
+    public void StreamingContentSeparatesThinkingAndAnswer()
+    {
+        var parsed = MessageViewModel.ParseStreamingContent(
+            "<think>先分析问题</think>\n最终答案");
+
+        Assert.AreEqual("先分析问题", parsed.Thinking);
+        Assert.AreEqual("最终答案", parsed.Answer);
+    }
+
+    [TestMethod]
+    public void StreamingContentParserHandlesThinkMarkersSplitAcrossChunks()
+    {
+        var parser = new MessageViewModel.StreamingContentParser();
+        parser.Append("<th");
+        parser.Append("ink>分析");
+        parser.Append("中</think>答");
+        var result = parser.Append("案");
+
+        Assert.AreEqual("分析中", result.Thinking);
+        Assert.AreEqual("答案", result.Answer);
+    }
+
+    [TestMethod]
+    public void StreamingSnapshotsDoNotReplaceMarkdownContent()
+    {
+        var message = new MessageViewModel { IsPending = true };
+        var markdownNotifications = 0;
+        message.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MessageViewModel.MarkdownContent))
+            {
+                markdownNotifications++;
+            }
+        };
+
+        message.ApplyStreamingSnapshot("分析", "回答");
+
+        Assert.AreEqual(string.Empty, message.Content);
+        Assert.AreEqual("回答", message.StreamingAnswer);
+        Assert.AreEqual(0, markdownNotifications);
+
+        message.Content = "<think>分析</think>回答";
+        message.IsPending = false;
+
+        Assert.AreEqual(1, markdownNotifications);
+        Assert.AreEqual("回答", message.MarkdownContent);
+    }
+
+    [TestMethod]
     public async Task GuestCanRegisterAndOpenUserCenter()
     {
         using var services = new DesktopServices(_temporaryDirectory);
