@@ -184,6 +184,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private async Task InitializeAsync()
     {
+        CurrentUser = await _services.Authentication.RestoreSessionAsync();
         await Chat.ChangeIdentityAsync();
         await History.RefreshAsync();
         await Models.RefreshAsync();
@@ -280,6 +281,7 @@ public partial class MainWindowViewModel : ObservableObject
                 StatusMessage = "用户名或密码错误，或账户已锁定。";
                 return;
             }
+            await _services.Authentication.SaveSessionAsync(user.Id, cancellationToken);
             CurrentUser = user;
             _services.Chat.ClearConversationState();
             LoginPassword = string.Empty;
@@ -315,6 +317,7 @@ public partial class MainWindowViewModel : ObservableObject
                 throw new InvalidOperationException("账户已创建，但无法自动登录，请使用新账户重新登录。");
             }
 
+            await _services.Authentication.SaveSessionAsync(user.Id, cancellationToken);
             CurrentUser = user;
             _services.Chat.ClearConversationState();
             LoginPassword = string.Empty;
@@ -350,6 +353,16 @@ public partial class MainWindowViewModel : ObservableObject
     private async Task SignOutAsync(CancellationToken cancellationToken)
     {
         IsBottomMenuOpen = false;
+        try
+        {
+            await _services.Authentication.ClearSessionAsync(cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Clearing the persistent login session failed");
+            StatusMessage = $"退出登录失败：{exception.Message}";
+            return;
+        }
         CurrentUser = null;
         _services.Chat.ClearConversationState();
         await Chat.ChangeIdentityAsync(cancellationToken);

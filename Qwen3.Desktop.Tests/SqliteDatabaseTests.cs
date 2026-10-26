@@ -442,6 +442,12 @@ public sealed class SqliteDatabaseTests
                 Path.Combine(installedModel.LocalPath, installedModel.EmbeddingFileName), [1]);
             await File.WriteAllBytesAsync(
                 Path.Combine(installedModel.LocalPath, installedModel.DecoderFileName), [2]);
+            foreach (var file in installedModel.HttpFileLinks)
+            {
+                var filePath = Path.Combine(installedModel.LocalPath, file.Path);
+                Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+                await File.WriteAllBytesAsync(filePath, [3]);
+            }
         }
 
         var conversationId = await services.Database.SaveTurnAsync(
@@ -476,6 +482,88 @@ public sealed class SqliteDatabaseTests
 
         Assert.IsNull(await _database.AuthenticateAsync(
             "locked-user", "secure-password-123", _cancellationToken));
+    }
+
+    [TestMethod]
+    public async Task LoginSessionPersistsAcrossRestartsAndExpiresOrClears()
+    {
+        var userId = await _database.CreateUserAsync(
+            "remembered-user", "secure-password-123", _cancellationToken);
+        var expiry = DateTimeOffset.UtcNow.AddDays(30);
+
+        await _database.SaveLoginSessionAsync(userId, expiry, _cancellationToken);
+        var restartedDatabase = new SqliteDatabase(_temporaryDirectory);
+        var restored = await restartedDatabase.RestoreLoginSessionAsync(_cancellationToken);
+        Assert.IsNotNull(restored);
+        Assert.AreEqual(userId, restored.Id);
+        Assert.AreEqual("remembered-user", restored.Username);
+
+        await _database.SaveLoginSessionAsync(
+            userId, DateTimeOffset.UtcNow.AddMinutes(-1), _cancellationToken);
+        Assert.IsNull(await _database.RestoreLoginSessionAsync(_cancellationToken));
+
+        await _database.SaveLoginSessionAsync(userId, expiry, _cancellationToken);
+        await _database.SetUserLockedAsync(userId, true, _cancellationToken);
+        Assert.IsNull(await _database.RestoreLoginSessionAsync(_cancellationToken));
+
+        await _database.SetUserLockedAsync(userId, false, _cancellationToken);
+        await _database.SaveLoginSessionAsync(userId, expiry, _cancellationToken);
+        await _database.ClearLoginSessionAsync(_cancellationToken);
+        Assert.IsNull(await _database.RestoreLoginSessionAsync(_cancellationToken));
+    }
+
+    [TestMethod]
+    public async Task BuiltInModelsHaveCompleteModelScopeHttpFallbacks()
+    {
+        var models = await _database.GetModelsAsync(_cancellationToken);
+        Assert.AreEqual(4, models.Count);
+
+        foreach (var model in models)
+        {
+            var expectedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "config.json", "tokenizer.json", "embedding.int8.onnx",
+                model.EnglishName.Contains("w4a32", StringComparison.OrdinalIgnoreCase)
+                    ? "decoder.int4.onnx"
+                    : "decoder.int8.onnx",
+                "vocab.json"
+            };
+            if (model.EnglishName.Contains("w4a32", StringComparison.OrdinalIgnoreCase))
+            {
+                expectedFiles.Add("decoder.int4.onnx.data");
+            }
+
+            Assert.IsTrue(expectedFiles.SetEquals(model.HttpFileLinks.Select(file => file.Path)));
+            foreach (var file in model.HttpFileLinks)
+            {
+                Assert.AreEqual(
+                    $"{model.RepositoryUrl}/resolve/master/{file.Path}?view=false",
+                    file.Url);
+            }
+        }
+    }
+
+    [TestMethod]
+    public void InstalledW4A32ModelRequiresItsExternalDecoderWeights()
+    {
+        var modelPath = Path.Combine(_temporaryDirectory, "w4a32-installation");
+        Directory.CreateDirectory(modelPath);
+        foreach (var fileName in new[]
+                 {
+                     "config.json", "tokenizer.json", "embedding.int8.onnx", "decoder.int4.onnx"
+                 })
+        {
+            File.WriteAllText(Path.Combine(modelPath, fileName), "model");
+        }
+        var model = new ModelDefinition(
+            "w4a32", "Qwen3 0.6B W4A32", "Qwen3-0.6B-w4a32-onnx", string.Empty,
+            string.Empty, modelPath, false, "embedding.int8.onnx", "decoder.int4.onnx", [],
+            [new ModelFileLink("decoder.int4.onnx.data", "https://example.com/decoder.int4.onnx.data")]);
+
+        Assert.IsFalse(ModelDownloadService.IsInstalled(model));
+
+        File.WriteAllText(Path.Combine(modelPath, "decoder.int4.onnx.data"), "weights");
+        Assert.IsTrue(ModelDownloadService.IsInstalled(model));
     }
 
     [TestMethod]
@@ -621,7 +709,7 @@ public sealed class SqliteDatabaseTests
         await legacyDatabase.InitializeAsync(_cancellationToken);
         var models = await legacyDatabase.GetModelsAsync(_cancellationToken);
         Assert.AreEqual(4, models.Count);
-        Assert.IsTrue(models.All(model => model.HttpFileLinks.Count == 0));
+        Assert.IsTrue(models.All(model => model.HttpFileLinks.Count >= 5));
     }
 
     [TestMethod]

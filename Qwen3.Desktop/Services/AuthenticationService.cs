@@ -4,9 +4,21 @@ namespace Qwen3.Desktop.Services;
 
 public sealed class AuthenticationService(SqliteDatabase database)
 {
+    private static readonly TimeSpan LoginSessionDuration = TimeSpan.FromDays(30);
+
     public Task<UserAccount?> SignInAsync(
         string username, string password, CancellationToken cancellationToken = default) =>
         database.AuthenticateAsync(username, password, cancellationToken);
+
+    public Task<UserAccount?> RestoreSessionAsync(CancellationToken cancellationToken = default) =>
+        database.RestoreLoginSessionAsync(cancellationToken);
+
+    public Task SaveSessionAsync(string userId, CancellationToken cancellationToken = default) =>
+        database.SaveLoginSessionAsync(
+            userId, DateTimeOffset.UtcNow.Add(LoginSessionDuration), cancellationToken);
+
+    public Task ClearSessionAsync(CancellationToken cancellationToken = default) =>
+        database.ClearLoginSessionAsync(cancellationToken);
 
     public Task<IReadOnlyList<UserAccount>> GetUsersAsync(CancellationToken cancellationToken = default) =>
         database.GetUsersAsync(cancellationToken);

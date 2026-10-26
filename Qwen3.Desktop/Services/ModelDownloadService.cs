@@ -36,7 +36,13 @@ public sealed class ModelDownloadService(HttpClient httpClient)
                 manifest = InspectLocalManifest(stagingPath);
                 var hasLfsPointers = manifest.Files.Any(file =>
                     IsGitLfsPointer(ResolveInsideDirectory(stagingPath, file.Path)));
-                if (hasLfsPointers || !HasRequiredModelFiles(manifest))
+                var hasIncompleteDirectFiles = model.HttpFileLinks.Any(file =>
+                {
+                    var path = ResolveInsideDirectory(stagingPath, file.Path);
+                    return !File.Exists(path) || IsGitLfsPointer(path) ||
+                           (file.Size > 0 && new FileInfo(path).Length != file.Size);
+                });
+                if (hasLfsPointers || hasIncompleteDirectFiles || !HasRequiredModelFiles(manifest))
                 {
                     if (model.HttpFileLinks.Count == 0 &&
                         !TryGetModelScopeRepository(model.RepositoryUrl, out _))
@@ -133,7 +139,7 @@ public sealed class ModelDownloadService(HttpClient httpClient)
             "tokenizer.json",
             model.EmbeddingFileName,
             model.DecoderFileName
-        };
+        }.Concat(model.HttpFileLinks.Select(file => file.Path));
         return requiredPaths.All(relativePath =>
         {
             var path = Path.Combine(model.LocalPath, relativePath);

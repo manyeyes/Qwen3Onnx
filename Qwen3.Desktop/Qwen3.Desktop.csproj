@@ -27,6 +27,11 @@
 				<TrimMode>partial</TrimMode>
 		</PropertyGroup>
 
+		<!-- 把Assets全部打包为Avalonia资源 -->
+		<ItemGroup>
+				<AvaloniaResource Include="Assets\**" />
+		</ItemGroup>
+
 		<ItemGroup>
 				<ProjectReference Include="..\Qwen3.Inference\Qwen3.Inference.csproj" />
 		</ItemGroup>

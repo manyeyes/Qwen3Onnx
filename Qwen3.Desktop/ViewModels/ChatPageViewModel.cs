@@ -44,6 +44,9 @@ public partial class ChatPageViewModel : ObservableObject
     private ObservableCollection<string> attachmentNames = [];
 
     [ObservableProperty]
+    private string attachmentHint = string.Empty;
+
+    [ObservableProperty]
     private string? conversationId;
 
     [ObservableProperty]
@@ -94,10 +97,14 @@ public partial class ChatPageViewModel : ObservableObject
     public bool CanShowSend => !IsBusy;
     public bool CanChangeConversation => !IsBusy;
     public bool HasNoMessages => Messages.Count == 0;
+    public bool HasAttachmentHint => !string.IsNullOrEmpty(AttachmentHint);
     public Func<string, Task>? CopyTextAsync { get; set; }
 
     partial void OnMessagesChanged(ObservableCollection<MessageViewModel> value) =>
         OnPropertyChanged(nameof(HasNoMessages));
+
+    partial void OnAttachmentHintChanged(string value) =>
+        OnPropertyChanged(nameof(HasAttachmentHint));
 
     public ChatPageViewModel(DesktopServices services, MainWindowViewModel shell)
     {
@@ -180,6 +187,7 @@ public partial class ChatPageViewModel : ObservableObject
             UpdateLatestAssistantAction();
             _attachments.Clear();
             AttachmentNames.Clear();
+            AttachmentHint = string.Empty;
             StatusText = SelectedModel is null
                 ? "此对话使用的模型尚未安装，请先在模型管理中下载。"
                 : $"已加载对话：{conversation.Title}";
@@ -204,6 +212,7 @@ public partial class ChatPageViewModel : ObservableObject
         UpdateLatestAssistantAction();
         _attachments.Clear();
         AttachmentNames.Clear();
+        AttachmentHint = string.Empty;
         InputText = string.Empty;
         StatusText = "新对话。";
         _ = RefreshModelsAsync();
@@ -221,6 +230,7 @@ public partial class ChatPageViewModel : ObservableObject
             UpdateLatestAssistantAction();
             _attachments.Clear();
             AttachmentNames.Clear();
+            AttachmentHint = string.Empty;
             InputText = string.Empty;
             await RefreshModelsAsync(cancellationToken);
             StatusText = _shell.CurrentUser is null
@@ -244,28 +254,30 @@ public partial class ChatPageViewModel : ObservableObject
     {
         _attachments.RemoveAll(item => item.Name == name);
         AttachmentNames.Remove(name);
+        AttachmentHint = string.Empty;
     }
 
     public async Task AddAttachmentsAsync(
         IEnumerable<string> paths, CancellationToken cancellationToken = default)
     {
+        AttachmentHint = string.Empty;
         foreach (var path in paths)
         {
             if (_attachments.Count >= MaximumAttachmentCount)
             {
-                StatusText = $"每条消息最多添加 {MaximumAttachmentCount} 个文本附件。";
+                AttachmentHint = $"每条消息最多添加 {MaximumAttachmentCount} 个文本附件。";
                 break;
             }
             var extension = Path.GetExtension(path);
             if (!TextExtensions.Contains(extension))
             {
-                StatusText = $"不支持的文本附件格式：{extension}";
+                AttachmentHint = $"不支持的文本附件格式：{extension}";
                 continue;
             }
             var info = new FileInfo(path);
             if (info.Length > MaximumAttachmentSize)
             {
-                StatusText = $"附件超过 1 MiB 限制：{info.Name}";
+                AttachmentHint = $"附件超过 1 MiB 限制：{info.Name}";
                 continue;
             }
             if (_attachments.Any(item => item.Name.Equals(info.Name, StringComparison.OrdinalIgnoreCase)))
@@ -275,7 +287,7 @@ public partial class ChatPageViewModel : ObservableObject
             var content = await File.ReadAllTextAsync(path, Encoding.UTF8, cancellationToken);
             if (content.Contains('\0'))
             {
-                StatusText = $"附件看起来不是文本文件：{info.Name}";
+                AttachmentHint = $"附件看起来不是文本文件：{info.Name}";
                 continue;
             }
             _attachments.Add((info.Name, content));
@@ -287,7 +299,7 @@ public partial class ChatPageViewModel : ObservableObject
     {
         if (SelectTextFilesAsync is null)
         {
-            StatusText = "无法打开文件选择器。";
+            AttachmentHint = "无法打开文件选择器。";
             return;
         }
         var paths = await SelectTextFilesAsync();
@@ -298,6 +310,9 @@ public partial class ChatPageViewModel : ObservableObject
 
     [RelayCommand]
     private Task AddAttachmentsAsync() => PickAttachmentsAsync();
+
+    [RelayCommand]
+    private Task SendFromKeyboardAsync() => SendAsync(CancellationToken.None);
 
     [RelayCommand]
     private async Task SendAsync(CancellationToken cancellationToken)
@@ -448,6 +463,7 @@ public partial class ChatPageViewModel : ObservableObject
             InputText = string.Empty;
             _attachments.Clear();
             AttachmentNames.Clear();
+            AttachmentHint = string.Empty;
         }
         IsBusy = true;
         var userMessage = new MessageViewModel
@@ -699,5 +715,4 @@ public partial class ChatPageViewModel : ObservableObject
             });
         }
     }
-
 }

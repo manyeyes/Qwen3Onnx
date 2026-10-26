@@ -73,6 +73,11 @@ public sealed class SqliteDatabase
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS login_sessions (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    expires_utc TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY,
                     username TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -145,7 +150,7 @@ public sealed class SqliteDatabase
         await using (var versionCommand = connection.CreateCommand())
         {
             versionCommand.CommandText =
-                "UPDATE app_metadata SET value = '5' WHERE key = 'schema_version';";
+                "UPDATE app_metadata SET value = '6' WHERE key = 'schema_version';";
             await versionCommand.ExecuteNonQueryAsync(cancellationToken);
         }
         await SeedModelsAsync(connection, cancellationToken);
@@ -636,6 +641,65 @@ public sealed class SqliteDatabase
             false, DateTimeOffset.Parse(reader.GetString(6)), reader.GetInt64(7));
     }
 
+    public async Task SaveLoginSessionAsync(
+        string userId, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO login_sessions(id, user_id, expires_utc)
+            SELECT 1, id, $expires
+            FROM users
+            WHERE id = $user_id AND is_locked = 0
+            ON CONFLICT(id) DO UPDATE SET
+                user_id = excluded.user_id,
+                expires_utc = excluded.expires_utc;
+            """;
+        command.Parameters.AddWithValue("$user_id", userId);
+        command.Parameters.AddWithValue("$expires", expiresAt.ToUniversalTime().ToString("O"));
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new UnauthorizedAccessException("The account no longer exists or is locked.");
+        }
+    }
+
+    public async Task<UserAccount?> RestoreLoginSessionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT u.id, u.username, u.role, u.created_utc,
+                COALESCE((SELECT SUM(prompt_tokens + completion_tokens)
+                    FROM usage_events WHERE user_id = u.id), 0)
+            FROM login_sessions s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.id = 1 AND s.expires_utc > $now AND u.is_locked = 0;
+            """;
+        command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            return new UserAccount(
+                reader.GetString(0), reader.GetString(1), reader.GetString(2),
+                false, DateTimeOffset.Parse(reader.GetString(3)), reader.GetInt64(4));
+        }
+        await reader.DisposeAsync();
+
+        await using var clearCommand = connection.CreateCommand();
+        clearCommand.CommandText = "DELETE FROM login_sessions WHERE id = 1;";
+        await clearCommand.ExecuteNonQueryAsync(cancellationToken);
+        return null;
+    }
+
+    public async Task ClearLoginSessionAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM login_sessions WHERE id = 1;";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<UserAccount>> GetUsersAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -999,15 +1063,17 @@ public sealed class SqliteDatabase
         {
             var directoryName = SanitizeModelDirectoryName(model.Name);
             var path = Path.Combine(_modelsDirectory, directoryName);
-            var embedded = model.Name.Contains("w4a32", StringComparison.OrdinalIgnoreCase)
-                ? "embedding.w4a32.onnx" : "embedding.int8.onnx";
-            var decoder = model.Name.Contains("w4a32", StringComparison.OrdinalIgnoreCase)
-                ? "decoder.w4a32.onnx" : "decoder.int8.onnx";
+            var isW4A32 = model.Name.Contains("w4a32", StringComparison.OrdinalIgnoreCase);
+            const string embedding = "embedding.int8.onnx";
+            var decoder = isW4A32 ? "decoder.int4.onnx" : "decoder.int8.onnx";
+            var directDownloads = CreateBuiltInModelFileLinks(model.Name, decoder, isW4A32);
             await using var command = connection.CreateCommand();
             command.CommandText = """
                 INSERT OR IGNORE INTO models(id, title, english_name, description, repository_url, local_path,
-                    is_installed, embedding_file_name, decoder_file_name, required_files_json, created_utc)
-                VALUES($id, $title, $name, $description, $url, $path, 0, $embedding, $decoder, '[]', $created);
+                    is_installed, embedding_file_name, decoder_file_name, required_files_json,
+                    direct_downloads_json, created_utc)
+                VALUES($id, $title, $name, $description, $url, $path, 0, $embedding, $decoder,
+                    '[]', $downloads, $created);
                 """;
             command.Parameters.AddWithValue("$id", directoryName.ToLowerInvariant());
             command.Parameters.AddWithValue("$title", model.Title);
@@ -1015,11 +1081,52 @@ public sealed class SqliteDatabase
             command.Parameters.AddWithValue("$description", model.Description);
             command.Parameters.AddWithValue("$url", model.Url);
             command.Parameters.AddWithValue("$path", path);
-            command.Parameters.AddWithValue("$embedding", embedded);
+            command.Parameters.AddWithValue("$embedding", embedding);
             command.Parameters.AddWithValue("$decoder", decoder);
+            command.Parameters.AddWithValue(
+                "$downloads", System.Text.Json.JsonSerializer.Serialize(directDownloads));
             command.Parameters.AddWithValue("$created", DateTimeOffset.UtcNow.ToString("O"));
             await command.ExecuteNonQueryAsync(cancellationToken);
+
+            await using var update = connection.CreateCommand();
+            update.CommandText = """
+                UPDATE models SET
+                    embedding_file_name = $embedding,
+                    decoder_file_name = $decoder,
+                    direct_downloads_json = CASE
+                        WHEN direct_downloads_json = '[]' THEN $downloads
+                        ELSE direct_downloads_json
+                    END
+                WHERE id = $id;
+                """;
+            update.Parameters.AddWithValue("$id", directoryName.ToLowerInvariant());
+            update.Parameters.AddWithValue("$embedding", embedding);
+            update.Parameters.AddWithValue("$decoder", decoder);
+            update.Parameters.AddWithValue(
+                "$downloads", System.Text.Json.JsonSerializer.Serialize(directDownloads));
+            await update.ExecuteNonQueryAsync(cancellationToken);
         }
+    }
+
+    private static IReadOnlyList<ModelFileLink> CreateBuiltInModelFileLinks(
+        string modelName, string decoderFile, bool includesExternalDecoderWeights)
+    {
+        var repository = $"https://modelscope.cn/models/manyeyes/{modelName}/resolve/master/";
+        var fileNames = new List<string>
+        {
+            "config.json",
+            "tokenizer.json",
+            "embedding.int8.onnx",
+            decoderFile,
+            "vocab.json"
+        };
+        if (includesExternalDecoderWeights)
+        {
+            fileNames.Add($"{decoderFile}.data");
+        }
+
+        return fileNames.Select(fileName =>
+            new ModelFileLink(fileName, $"{repository}{fileName}?view=false")).ToArray();
     }
 
     private static async Task EnsureModelDownloadColumnAsync(
