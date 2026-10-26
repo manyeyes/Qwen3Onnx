@@ -40,6 +40,14 @@ public partial class MessageViewModel : ObservableObject
     [ObservableProperty]
     private bool isTextSelectionMode;
 
+    // 用户气泡：浅灰圆角；助手：完全透明
+    public string BubbleBackground => IsUser ? "#F2F4F7" : "Transparent";
+
+    // 用户气泡内部留白；助手不留白（内容直接贴白底）
+    public Avalonia.Thickness BubblePadding => IsUser
+        ? new Avalonia.Thickness(18, 14, 18, 14)
+        : new Avalonia.Thickness(0);
+
     public string InterruptionLabel => "已停止 · 部分回复已保存";
     public int BubbleColumn => IsUser ? 1 : 0;
     public int BubbleColumnSpan => IsUser ? 1 : 3;
@@ -102,7 +110,9 @@ public partial class MessageViewModel : ObservableObject
         OnPropertyChanged(nameof(BubbleMargin));
         OnPropertyChanged(nameof(IsMarkdownVisible));
         OnPropertyChanged(nameof(BubbleMaxWidth));
-        OnPropertyChanged(nameof(BubbleColumnSpan));
+        OnPropertyChanged(nameof(BubbleColumnSpan)); 
+        OnPropertyChanged(nameof(BubbleBackground));
+        OnPropertyChanged(nameof(BubblePadding));
     }
 
     partial void OnContentChanged(string value)

@@ -4,6 +4,7 @@
         xmlns:views="using:Qwen3.Desktop.Views"
         x:Class="Qwen3.Desktop.Views.MainWindow"
         x:CompileBindings="False"
+        Icon="/Assets/favicon.ico"
         Title="Qwen3 ONNX"
         Width="1080" Height="720"
         MinWidth="760" MinHeight="520"
