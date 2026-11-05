@@ -20,7 +20,7 @@ public sealed class SqliteDatabaseTests
     public async Task InitializeAsync()
     {
         _temporaryDirectory = Path.Combine(
-            Path.GetTempPath(), $"qwen3-desktop-tests-{Guid.NewGuid():N}");
+            Path.GetTempPath(), $"onar-desktop-tests-{Guid.NewGuid():N}");
         _database = new SqliteDatabase(_temporaryDirectory);
         _cancellationToken = CancellationToken.None;
         var bootstrap = await _database.InitializeAsync(_cancellationToken);
@@ -623,6 +623,11 @@ public sealed class SqliteDatabaseTests
                             "model.onnx.data", "special_tokens_map.json", "tokenizer.json",
                             "tokenizer_config.json"],
                         StringComparer.OrdinalIgnoreCase),
+                    "gemma-onnx-genai" => new HashSet<string>(
+                        ["added_tokens.json", "chat_template.jinja", "genai_config.json",
+                            "model.onnx", "model.onnx.data", "special_tokens_map.json",
+                            "tokenizer.json", "tokenizer.model", "tokenizer_config.json"],
+                        StringComparer.OrdinalIgnoreCase),
                     _ => new HashSet<string>(
                         ["chat_template.jinja", "genai_config.json", "model.onnx",
                             "model.onnx.data", "tokenizer.json", "tokenizer_config.json"],
@@ -630,7 +635,7 @@ public sealed class SqliteDatabaseTests
                 };
                 Assert.IsTrue(
                     model.EngineId is "qwen3-onnx-genai" or "llama-onnx-genai" or
-                        "phi-onnx-genai" or "deepseek-onnx-genai");
+                    "phi-onnx-genai" or "deepseek-onnx-genai" or "gemma-onnx-genai");
                 Assert.IsTrue(genAiFiles.SetEquals(model.HttpFileLinks.Select(file => file.Path)));
                 foreach (var file in model.HttpFileLinks)
                 {
@@ -700,7 +705,7 @@ public sealed class SqliteDatabaseTests
     {
     var legacyDirectory = Path.Combine(_temporaryDirectory, "legacy-engine-db");
     Directory.CreateDirectory(legacyDirectory);
-    var legacyPath = Path.Combine(legacyDirectory, "qwen3-desktop.sqlite3");
+    var legacyPath = Path.Combine(legacyDirectory, "onar-desktop.sqlite3");
     await using (var connection = new SqliteConnection($"Data Source={legacyPath}"))
     {
         await connection.OpenAsync(_cancellationToken);
@@ -918,6 +923,12 @@ public sealed class SqliteDatabaseTests
             [
                 "chat_template.jinja", "genai_config.json", "model.onnx", "model.onnx.data",
                 "special_tokens_map.json", "tokenizer.json", "tokenizer_config.json"
+            ],
+            ["gemma-onnx-genai"] =
+            [
+                "added_tokens.json", "chat_template.jinja", "genai_config.json", "model.onnx",
+                "model.onnx.data", "special_tokens_map.json", "tokenizer.json", "tokenizer.model",
+                "tokenizer_config.json"
             ]
         };
 
@@ -983,7 +994,7 @@ public sealed class SqliteDatabaseTests
     {
         var legacyDirectory = Path.Combine(_temporaryDirectory, "legacy-db");
         Directory.CreateDirectory(legacyDirectory);
-        var legacyPath = Path.Combine(legacyDirectory, "qwen3-desktop.sqlite3");
+        var legacyPath = Path.Combine(legacyDirectory, "onar-desktop.sqlite3");
         await using (var connection = new SqliteConnection($"Data Source={legacyPath}"))
         {
             await connection.OpenAsync(_cancellationToken);
@@ -1019,7 +1030,7 @@ public sealed class SqliteDatabaseTests
     {
         var legacyDirectory = Path.Combine(_temporaryDirectory, "legacy-message-db");
         Directory.CreateDirectory(legacyDirectory);
-        var legacyPath = Path.Combine(legacyDirectory, "qwen3-desktop.sqlite3");
+        var legacyPath = Path.Combine(legacyDirectory, "onar-desktop.sqlite3");
         await using (var connection = new SqliteConnection($"Data Source={legacyPath}"))
         {
             await connection.OpenAsync(_cancellationToken);
@@ -1064,7 +1075,7 @@ public sealed class SqliteDatabaseTests
     {
         var legacyDirectory = Path.Combine(_temporaryDirectory, "legacy-conversation-db");
         Directory.CreateDirectory(legacyDirectory);
-        var legacyPath = Path.Combine(legacyDirectory, "qwen3-desktop.sqlite3");
+        var legacyPath = Path.Combine(legacyDirectory, "onar-desktop.sqlite3");
         await using (var connection = new SqliteConnection($"Data Source={legacyPath}"))
         {
             await connection.OpenAsync(_cancellationToken);
