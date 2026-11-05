@@ -1,0 +1,524 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:icons="clr-namespace:Material.Icons;assembly=Material.Icons"
+             x:Class="Onar.Desktop.Views.ModelsView"
+             x:CompileBindings="False">
+
+  <!-- 统一样式 -->
+  <UserControl.Styles>
+    <!-- 主按钮：白底灰字灰边（在浅灰卡片上清晰可见） -->
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="Foreground" Value="#344054"/>
+      <Setter Property="BorderBrush" Value="#D0D5DD"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="14,8"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#F9FAFB"/>
+    </Style>
+    <Style Selector="Button.primary:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="#F2F4F7"/>
+    </Style>
+    <Style Selector="Button.primary:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="#F9FAFB"/>
+      <Setter Property="TextElement.Foreground" Value="#98A2B3"/>
+    </Style>
+
+    <!-- 次按钮：白底灰字灰边 -->
+    <Style Selector="Button.secondary">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="Foreground" Value="#344054"/>
+      <Setter Property="BorderBrush" Value="#D0D5DD"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="14,8"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.secondary:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#F9FAFB"/>
+    </Style>
+    <Style Selector="Button.secondary:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="#F9FAFB"/>
+      <Setter Property="TextElement.Foreground" Value="#98A2B3"/>
+    </Style>
+
+    <!-- 危险次按钮：白底 + 淡红字边 -->
+    <Style Selector="Button.dangerOutline">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="Foreground" Value="#B42318"/>
+      <Setter Property="BorderBrush" Value="#FDA29B"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="14,8"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.dangerOutline:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#FEF3F2"/>
+    </Style>
+
+    <!-- 危险按钮（仅确认弹窗使用实心红） -->
+    <Style Selector="Button.danger">
+      <Setter Property="Background" Value="#D92D20"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="14,8"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#B42318"/>
+    </Style>
+
+    <!-- 图标幽灵按钮 -->
+    <Style Selector="Button.ghost">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="6"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="Foreground" Value="#667085"/>
+    </Style>
+    <Style Selector="Button.ghost:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#F2F4F7"/>
+    </Style>
+
+    <!-- 模型卡片：浅灰底 + 无边框 + 无阴影 -->
+    <Style Selector="Border.modelCard">
+      <Setter Property="Background" Value="#F9FAFB"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="CornerRadius" Value="14"/>
+      <Setter Property="Padding" Value="22"/>
+    </Style>
+    <Style Selector="Border.modelCard:pointerover">
+      <Setter Property="Background" Value="#F2F4F7"/>
+    </Style>
+
+    <!-- 状态徽章：白底 + 淡边（因卡片是浅灰底） -->
+    <Style Selector="Border.meta">
+      <Setter Property="Padding" Value="9,3"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="BorderBrush" Value="#EAECF0"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+
+    <!-- 已安装状态标签：绿色，与按钮等高 -->
+    <Style Selector="Border.installed">
+      <Setter Property="Background" Value="#ECFDF3"/>
+      <Setter Property="BorderBrush" Value="#ABEFC6"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="14,8"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+    </Style>
+
+    <!-- Expander：自定义模板，箭头固定位置，不因旋转而推挤 Header -->
+    <Style Selector="Expander.downloadExpander">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <StackPanel>
+            <ToggleButton Name="PART_toggle"
+                          Background="Transparent"
+                          BorderThickness="0"
+                          Padding="0"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch"
+                          Focusable="False"
+                          IsChecked="{TemplateBinding IsExpanded, Mode=TwoWay}">
+              <ToggleButton.Template>
+                <ControlTemplate>
+                  <Border Name="PART_toggleBorder"
+                          Background="Transparent"
+                          Padding="0"
+                          CornerRadius="6">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                  </Border>
+                </ControlTemplate>
+              </ToggleButton.Template>
+              <Grid ColumnDefinitions="Auto,*" Margin="0,2">
+                <Border Width="16" Height="16" VerticalAlignment="Center">
+                  <Path Name="PART_chevron"
+                        Data="M 2 5 L 6 9 L 2 13"
+                        Stroke="#98A2B3"
+                        StrokeThickness="1.5"
+                        StrokeLineCap="Round"
+                        StrokeJoin="Round"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        RenderTransformOrigin="50%,50%">
+                    <Path.RenderTransform>
+                      <RotateTransform Angle="0"/>
+                    </Path.RenderTransform>
+                  </Path>
+                </Border>
+                <ContentPresenter Grid.Column="1"
+                                  Content="{TemplateBinding Header}"
+                                  ContentTemplate="{TemplateBinding HeaderTemplate}"
+                                  Margin="6,0,0,0"
+                                  VerticalAlignment="Center"/>
+              </Grid>
+            </ToggleButton>
+            <ContentPresenter Name="PART_ContentPresenter"
+                              Content="{TemplateBinding Content}"
+                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                              IsVisible="{TemplateBinding IsExpanded}"
+                              Margin="0,6,0,0"/>
+          </StackPanel>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Expander.downloadExpander:expanded /template/ Path#PART_chevron">
+      <Setter Property="RenderTransform">
+        <RotateTransform Angle="90"/>
+      </Setter>
+    </Style>
+    <Style Selector="Expander.downloadExpander /template/ ToggleButton#PART_toggle:pointerover /template/ Border#PART_toggleBorder">
+      <Setter Property="Background" Value="#EAECF0"/>
+    </Style>
+  </UserControl.Styles>
+
+  <!-- 主布局：白底 -->
+  <Grid Background="White" RowDefinitions="Auto,*">
+
+    <!-- 顶部栏 -->
+    <Border Padding="26,18" Background="White" BorderBrush="#EAECF0" BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+        <Border Width="42" Height="42" CornerRadius="10" Background="#F2F4F7" VerticalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.CubeOutline}"
+                                      Width="22" Height="22" Foreground="#667085"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Border>
+        <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+          <TextBlock Text="模型管理" FontSize="21" FontWeight="SemiBold" Foreground="#101828"/>
+          <TextBlock Text="管理本地模型和下载来源，支持 Git 克隆与逐文件 HTTP 备用下载。"
+                     Foreground="#667085" FontSize="13" TextWrapping="Wrap"/>
+        </StackPanel>
+        <Button Grid.Column="2" Classes="primary"
+                Command="{Binding OpenNewModelEditorCommand}"
+                IsVisible="{Binding IsAdmin}" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Plus}"
+                                        Width="15" Height="15" VerticalAlignment="Center"/>
+            <TextBlock Text="添加模型" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+      </Grid>
+    </Border>
+
+    <!-- 内容区 -->
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="26,22" Spacing="16" MaxWidth="1100"
+                  HorizontalAlignment="Stretch">
+
+        <!-- 忙碌状态条 -->
+        <Border IsVisible="{Binding IsBusy}" Padding="16,14"
+                Background="#EFF8FF" CornerRadius="12"
+                BorderBrush="#D1E9FF" BorderThickness="1">
+          <StackPanel Spacing="10">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.ProgressClock}"
+                                          Width="16" Height="16" Foreground="#175CD3"
+                                          VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding StatusText}" Foreground="#175CD3"
+                         TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
+            </StackPanel>
+            <ProgressBar Minimum="0" Maximum="100" Value="{Binding DownloadProgress}"
+                         IsIndeterminate="{Binding IsDownloadIndeterminate}"
+                         Height="6" CornerRadius="3"/>
+          </StackPanel>
+        </Border>
+
+        <!-- 空闲状态条：浅灰底，与页面白底区分 -->
+        <Border IsVisible="{Binding IsNotBusy}" Padding="14,10"
+                Background="#F9FAFB" CornerRadius="10"
+                BorderThickness="0">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.InformationOutline}"
+                                        Width="15" Height="15" Foreground="#98A2B3"
+                                        VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding StatusText}" Foreground="#667085"
+                       TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
+          </StackPanel>
+        </Border>
+
+        <!-- 空状态：浅灰底，与卡片一致 -->
+        <Border IsVisible="{Binding HasNoModels}" Padding="40,48"
+                Background="#F9FAFB" CornerRadius="14"
+                BorderThickness="0">
+          <StackPanel Spacing="10" HorizontalAlignment="Center">
+            <Border Width="56" Height="56" CornerRadius="14" Background="White"
+                    HorizontalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.CubeOutline}"
+                                          Width="26" Height="26" Foreground="#98A2B3"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <TextBlock Text="还没有安装任何模型" FontSize="16" FontWeight="SemiBold"
+                       Foreground="#344054" HorizontalAlignment="Center"/>
+            <TextBlock Text="添加模型仓库或逐文件下载链接后即可安装。"
+                       Foreground="#667085" FontSize="13" HorizontalAlignment="Center"/>
+          </StackPanel>
+        </Border>
+
+        <!-- 模型卡片列表 -->
+        <ItemsControl ItemsSource="{Binding Models}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Classes="modelCard" Margin="0,0,0,12">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+
+                  <!-- 左侧：平铺信息 -->
+                  <StackPanel Spacing="10">
+
+                    <!-- 标题行：标题 + 状态徽章 -->
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                      <TextBlock Text="{Binding Title}"
+                                 FontSize="16" FontWeight="SemiBold" Foreground="#101828"
+                                 TextWrapping="Wrap" VerticalAlignment="Center"/>
+                      <!-- <Border Grid.Column="1" Classes="meta" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding InstallationStatus}"
+                                   FontSize="11" FontWeight="SemiBold" Foreground="#475467"/>
+                      </Border> -->
+                    </Grid>
+
+                    <!-- 描述 -->
+                    <TextBlock Text="{Binding Description}" TextWrapping="Wrap"
+                               Foreground="#475467" FontSize="13" LineHeight="20"/>
+
+                    <!-- 元信息一行：引擎 · 文件数 · Git -->
+                    <WrapPanel Orientation="Horizontal">
+                      <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,14,0">
+                        <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.CogOutline}"
+                                                    Width="12" Height="12" Foreground="#98A2B3"
+                                                    VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding EngineDisplayName}" FontSize="12"
+                                   Foreground="#667085" VerticalAlignment="Center"/>
+                      </StackPanel>
+                      <!-- <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,14,0">
+                        <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Web}"
+                                                    Width="12" Height="12" Foreground="#98A2B3"
+                                                    VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding HttpFileCount, StringFormat='相关文件 {0}'}"
+                                   FontSize="12" Foreground="#667085" VerticalAlignment="Center"/>
+                      </StackPanel> -->
+                      <StackPanel Orientation="Horizontal" Spacing="5">
+                        <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.SourceBranch}"
+                                                    Width="12" Height="12" Foreground="#98A2B3"
+                                                    VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding RepositoryUrl}" FontSize="12"
+                                   Foreground="#667085" TextWrapping="Wrap"
+                                   VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </WrapPanel>
+
+                    <!-- 细分隔线（浅灰卡片上用 #EAECF0 才显） -->
+                    <Border Height="1" Background="#EAECF0"/>
+
+                    <!-- 下载文件折叠 -->
+                    <Expander Classes="downloadExpander" IsExpanded="False">
+                      <Expander.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <TextBlock Text="文件地址" FontSize="12" FontWeight="SemiBold"
+                                     Foreground="#475467" VerticalAlignment="Center"/>
+                          <Border Background="#EAECF0" Padding="6,0" CornerRadius="8"
+                                  VerticalAlignment="Center">
+                            <TextBlock Text="{Binding HttpFileCount}" FontSize="11"
+                                       Foreground="#667085"/>
+                          </Border>
+                        </StackPanel>
+                      </Expander.Header>
+                      <ItemsControl ItemsSource="{Binding HttpFileLinks}" Margin="22,2,0,0">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <TextBlock Text="{Binding DisplayText}" FontSize="11.5"
+                                       Foreground="#667085" TextWrapping="Wrap" Margin="0,2"/>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </Expander>
+                  </StackPanel>
+
+                  <!-- 右侧操作按钮 -->
+                  <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Top" MinWidth="120">
+
+                    <!-- 未安装：显示下载 / 安装 -->
+                    <Button Classes="primary"
+                            IsVisible="{Binding !IsInstalled}"
+                            Command="{Binding $parent[UserControl].DataContext.DownloadModelCommand}"
+                            CommandParameter="{Binding}"
+                            IsEnabled="{Binding $parent[UserControl].DataContext.CanDownload}">
+                      <StackPanel Orientation="Horizontal" Spacing="6"
+                                  HorizontalAlignment="Center">
+                        <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Download}"
+                                                    Width="14" Height="14" VerticalAlignment="Center"/>
+                        <TextBlock Text="下载 / 安装" VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </Button>
+
+                    <!-- 已安装：显示绿色状态标签，不可点击 -->
+                    <Border Classes="installed" IsVisible="{Binding IsInstalled}">
+                      <StackPanel Orientation="Horizontal" Spacing="6"
+                                  HorizontalAlignment="Center">
+                        <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.CheckCircle}"
+                                                    Width="14" Height="14" Foreground="#067647"
+                                                    VerticalAlignment="Center"/>
+                        <TextBlock Text="已安装" Foreground="#067647" FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </Border>
+
+                    <Button Classes="secondary"
+                            Command="{Binding $parent[UserControl].DataContext.EditModelCommand}"
+                            CommandParameter="{Binding}"
+                            IsEnabled="{Binding $parent[UserControl].DataContext.CanDownload}"
+                            IsVisible="{Binding $parent[UserControl].DataContext.IsAdmin}">
+                      <StackPanel Orientation="Horizontal" Spacing="6"
+                                  HorizontalAlignment="Center">
+                        <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Pencil}"
+                                                    Width="13" Height="13" VerticalAlignment="Center"/>
+                        <TextBlock Text="编辑" VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </Button>
+
+                    <Button Classes="dangerOutline"
+                            Command="{Binding $parent[UserControl].DataContext.DeleteModelCommand}"
+                            CommandParameter="{Binding}"
+                            IsEnabled="{Binding $parent[UserControl].DataContext.CanDownload}"
+                            IsVisible="{Binding $parent[UserControl].DataContext.IsAdmin}">
+                      <StackPanel Orientation="Horizontal" Spacing="6"
+                                  HorizontalAlignment="Center">
+                        <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.DeleteOutline}"
+                                                    Width="13" Height="13" VerticalAlignment="Center"/>
+                        <TextBlock Text="删除" VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </Button>
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- 编辑弹窗 -->
+    <Border Grid.Row="0" Grid.RowSpan="2" IsVisible="{Binding IsEditorOpen}"
+            Background="#990F172A" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+            ZIndex="20">
+      <Border Width="640" MaxHeight="760" Margin="20" Background="White" CornerRadius="16"
+              BoxShadow="0 24 64 0 #33101828"
+              HorizontalAlignment="Center" VerticalAlignment="Center">
+        <Grid RowDefinitions="Auto,*,Auto">
+
+          <!-- 弹窗头部 -->
+          <Border Grid.Row="0" Padding="24,20,16,16"
+                  BorderBrush="#EAECF0" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="4" VerticalAlignment="Center">
+                <TextBlock Text="{Binding EditorTitle}" FontSize="18" FontWeight="SemiBold"
+                           Foreground="#101828"/>
+                <TextBlock Text="至少填写一种可用下载方式。"
+                           Foreground="#667085" FontSize="12"/>
+              </StackPanel>
+              <Button Grid.Column="1" Classes="ghost" Width="32" Height="32"
+                      Command="{Binding CloseEditorCommand}"
+                      IsEnabled="{Binding CanDownload}"
+                      ToolTip.Tip="关闭"
+                      HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Close}"
+                                            Width="18" Height="18"/>
+              </Button>
+            </Grid>
+          </Border>
+
+          <!-- 弹窗内容 -->
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="24,18,24,20" Spacing="12">
+
+              <TextBlock Text="基本信息" FontSize="12" FontWeight="SemiBold" Foreground="#667085"/>
+              <TextBox Text="{Binding NewTitle}" PlaceholderText="模型标题"
+                       CornerRadius="8" Padding="10,8"/>
+              <TextBox Text="{Binding NewEnglishName}" PlaceholderText="英文名称（用于本地目录）"
+                       CornerRadius="8" Padding="10,8"/>
+              <TextBox Text="{Binding NewDescription}" PlaceholderText="模型描述"
+                       CornerRadius="8" Padding="10,8"/>
+
+              <Border Height="1" Background="#EAECF0" Margin="0,6"/>
+              <TextBlock Text="下载源" FontSize="12" FontWeight="SemiBold" Foreground="#667085"/>
+              <TextBox Text="{Binding NewRepositoryUrl}"
+                       PlaceholderText="Git clone 仓库 URL（可选）"
+                       CornerRadius="8" Padding="10,8"/>
+              <TextBlock Text="HTTP 备用文件：每行填写 相对路径 | 下载 URL | 文件大小（可选） | SHA-256（可选）"
+                         Foreground="#667085" FontSize="12" TextWrapping="Wrap"/>
+              <TextBox Text="{Binding NewHttpFileLinks}" AcceptsReturn="True" TextWrapping="Wrap"
+                       MinHeight="140" CornerRadius="8" Padding="10,8"
+                       PlaceholderText="config.json | https://host/model/config.json&#10;tokenizer.json | https://host/model/tokenizer.json"/>
+
+              <Border Padding="12,8" Background="#FEF3F2" CornerRadius="8"
+                      BorderBrush="#FECDCA" BorderThickness="1">
+                <TextBlock Text="{Binding StatusText}" Foreground="#B42318"
+                           TextWrapping="Wrap" FontSize="12"/>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- 弹窗底部 -->
+          <Border Grid.Row="2" Padding="24,14,24,16"
+                  BorderBrush="#EAECF0" BorderThickness="0,1,0,0"
+                  Background="#F9FAFB" CornerRadius="0,0,16,16">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+              <Button Classes="secondary" Content="取消" Command="{Binding CancelEditCommand}"/>
+              <Button Classes="primary" Content="保存" Command="{Binding RegisterModelCommand}"
+                      IsEnabled="{Binding CanDownload}"/>
+            </StackPanel>
+          </Border>
+        </Grid>
+      </Border>
+    </Border>
+
+    <!-- 删除确认弹窗 -->
+    <Border Grid.Row="0" Grid.RowSpan="2" IsVisible="{Binding IsDeleteConfirmationOpen}"
+            Background="#990F172A" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+            ZIndex="30">
+      <Border Width="440" Margin="20" Background="White" CornerRadius="16"
+              BoxShadow="0 24 64 0 #33101828"
+              HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel Spacing="14" Margin="26">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+            <Border Width="38" Height="38" CornerRadius="19" Background="#FEF3F2">
+              <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.AlertOutline}"
+                                          Width="20" Height="20" Foreground="#D92D20"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <TextBlock Grid.Column="1" Text="确认删除模型？" FontSize="17" FontWeight="SemiBold"
+                       Foreground="#101828" VerticalAlignment="Center"/>
+          </Grid>
+
+          <TextBlock Text="{Binding ModelPendingDelete.Title}"
+                     Foreground="#344054" FontWeight="SemiBold" TextWrapping="Wrap"/>
+          <TextBlock Text="模型文件和目录记录将被移除。此操作不可撤销。"
+                     Foreground="#667085" TextWrapping="Wrap" FontSize="13"/>
+
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <Button Classes="secondary" Content="取消" Command="{Binding CancelDeleteCommand}"
+                    IsEnabled="{Binding CanDownload}"/>
+            <Button Classes="danger" Content="确认删除"
+                    Command="{Binding ConfirmDeleteModelCommand}"
+                    IsEnabled="{Binding CanDownload}"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Border>
+  </Grid>
+</UserControl>

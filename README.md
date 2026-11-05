@@ -1,6 +1,6 @@
-# Qwen3 ONNX Inference for .NET
+# Onar - LLM ONNX Inference for .NET
 
-使用 C#、ONNX Runtime 在本地运行 Qwen3 ONNX 模型。方案包含可复用的推理核心、交互式控制台、独立 CLI 和 Avalonia 桌面端，支持 ONNX Runtime GenAI 模型、CPU/CUDA 后端切换、场景化生成参数、对话历史、日志及可扩展的推理引擎接口。
+使用 C#、ONNX Runtime 在本地运行 LLM ONNX 模型。方案包含可复用的推理核心、交互式控制台、独立 CLI 和 Avalonia 桌面端，支持 ONNX Runtime GenAI 模型、CPU/CUDA 后端切换、场景化生成参数、对话历史、日志及可扩展的推理引擎接口。
 
 > CLI 和交互式控制台直接使用本地模型文件；桌面端可在模型管理中按需下载内置 ModelScope 模型。模型权重不包含在代码仓库中。
 
@@ -9,17 +9,17 @@
 - **本地 ONNX 推理**：支持拆分 embedding/decoder 图和 ONNX Runtime GenAI 单图模型；桌面端默认使用 CPU 后端，也可构建 CUDA 后端。
 - **模型推理核心**：统一的 `ChatAssistant` API、`IInferenceEngine` 接口和可注册的 `IInferenceEngineFactory`。
 - **两种应用入口**：
-  - `Qwen3.Cli`：单次问答命令行，提供参数解析、校验、帮助、日志和退出码。
-  - `Qwen3.Console`：交互式问答，提供多轮记忆、场景选择和思考模式控制。
-- **Avalonia 桌面应用**：`Qwen3.Desktop` 使用 MVVM 页面切换，提供本地聊天、可选择文本的消息、模型 Git/HTTP 下载、SQLite 历史、本地账户注册与用户中心；支持思考预算后继续回答和保存中断的部分回复，侧栏底部菜单包含账户管理、官网与关于页面。
+  - `Onar.Cli`：单次问答命令行，提供参数解析、校验、帮助、日志和退出码。
+  - `Onar.Console`：交互式问答，提供多轮记忆、场景选择和思考模式控制。
+- **Avalonia 桌面应用**：`Onar.Desktop` 使用 MVVM 页面切换，提供本地聊天、可选择文本的消息、模型 Git/HTTP 下载、SQLite 历史、本地账户注册与用户中心；支持思考预算后继续回答和保存中断的部分回复，侧栏底部菜单包含账户管理、官网与关于页面。
 - **自动引擎选择**：模型目录记录推理引擎类型；桌面端选择模型后自动创建对应的 ONNX 或 ONNX Runtime GenAI 引擎。
 - **生成控制**：温度、Top-P / Top-K、重复惩罚、思考预算、输出长度、流式输出及复读/循环检测。
 - **场景配置**：`fast_qa`、`deep`、`roleplay`、`precise`、`chitchat`。
 - **本地日志**：CLI 标准错误日志及可选 JSON Lines 日志文件。
 
-## Qwen3 ONNX 模型
+## LLM ONNX 模型
 
-本项目面向 Qwen3 文本生成模型的本地 ONNX 部署。Qwen3 模型支持思考/非思考式对话使用方式；本项目通过 Qwen ChatML 提示词和 `think` 标签支持对应控制。是否实际生成思考文本取决于所用 checkpoint、提示词和生成参数。
+本项目面向 LLM 文本生成模型的本地 ONNX 部署。LLM 模型支持思考/非思考式对话使用方式；本项目通过 Qwen ChatML 提示词和 `think` 标签支持对应控制。是否实际生成思考文本取决于所用 checkpoint、提示词和生成参数。
 
 | 参数规模 | INT8 | W4A32 |
 | --- | --- | --- |
@@ -44,11 +44,11 @@ decoder.int8.onnx
 ## 项目结构
 
 ```text
-Qwen3Onnx.sln
-├── Qwen3.Inference/   推理抽象、Qwen3 ONNX 引擎、采样和对话管理
-├── Qwen3.Cli/         System.CommandLine 单次问答 CLI
-├── Qwen3.Console/     交互式控制台
-└── Qwen3.Desktop/     Avalonia + MVVM 跨平台桌面应用
+Onar.sln
+├── Onar.Inference/   推理抽象、LLM ONNX 引擎、采样和对话管理
+├── Onar.Cli/         System.CommandLine 单次问答 CLI
+├── Onar.Console/     交互式控制台
+└── Onar.Desktop/     Avalonia + MVVM 跨平台桌面应用
 ```
 
 ## 快速开始
@@ -62,34 +62,34 @@ Qwen3Onnx.sln
 ### 构建
 
 ```powershell
-dotnet restore Qwen3Onnx.sln
-dotnet build Qwen3Onnx.sln
+dotnet restore Onar.sln
+dotnet build Onar.sln
 ```
 
 ### 桌面端
 
 ```powershell
-dotnet run --project Qwen3.Desktop
+dotnet run --project Onar.Desktop
 ```
 
-`Qwen3.Desktop` 只引用 `Qwen3.Inference`。桌面端默认使用 GPU 后端和 CUDA 12；可按需选择 CPU 或 CUDA 13：
+`Onar.Desktop` 只引用 `Onar.Inference`。桌面端默认使用 GPU 后端和 CUDA 12；可按需选择 CPU 或 CUDA 13：
 
 ```powershell
-dotnet build Qwen3.Desktop\Qwen3.Desktop.csproj -p:InferenceBackend=Cpu
-dotnet build Qwen3.Desktop\Qwen3.Desktop.csproj -p:InferenceBackend=Gpu -p:CudaVersion=12
-dotnet build Qwen3.Desktop\Qwen3.Desktop.csproj -p:InferenceBackend=Gpu -p:CudaVersion=13
+dotnet build Onar.Desktop\Onar.Desktop.csproj -p:InferenceBackend=Cpu
+dotnet build Onar.Desktop\Onar.Desktop.csproj -p:InferenceBackend=Gpu -p:CudaVersion=12
+dotnet build Onar.Desktop\Onar.Desktop.csproj -p:InferenceBackend=Gpu -p:CudaVersion=13
 ```
 
-`InferenceBackend` 和 `CudaVersion` 会由桌面项目传递到推理核心项目，由 `Qwen3.Inference.csproj` 选择相应 ONNX Runtime / GenAI NuGet 包。CPU 模式使用 ORT 1.31.0 / GenAI 0.18.0；CUDA 12 使用 ORT GPU 1.26.0 / GenAI CUDA 0.14.1；CUDA 13 使用 ORT GPU 1.31.0 / GenAI CUDA 0.18.0。目标机器须安装与所选包兼容的 NVIDIA 驱动及 CUDA 运行时；GPU 构建成功不等于已验证目标机器上的 CUDA 推理。
+`InferenceBackend` 和 `CudaVersion` 会由桌面项目传递到推理核心项目，由 `Onar.Inference.csproj` 选择相应 ONNX Runtime / GenAI NuGet 包。CPU 模式使用 ORT 1.31.0 / GenAI 0.18.0；CUDA 12 使用 ORT GPU 1.26.0 / GenAI CUDA 0.14.1；CUDA 13 使用 ORT GPU 1.31.0 / GenAI CUDA 0.18.0。目标机器须安装与所选包兼容的 NVIDIA 驱动及 CUDA 运行时；GPU 构建成功不等于已验证目标机器上的 CUDA 推理。
 
 首次启动会生成一次性管理员密码并在应用中显示；请立即保存。桌面端功能、模型安装方式、SQLite 数据位置、账户隔离和发布说明见[桌面端使用指南](docs/USER_GUIDE.md#14-avalonia-桌面端)。
 
 ### CLI
 
 ```powershell
-dotnet run --project Qwen3.Cli -- --help
+dotnet run --project Onar.Cli -- --help
 
-dotnet run --project Qwen3.Cli -- "解释 KV Cache 的作用" `
+dotnet run --project Onar.Cli -- "解释 KV Cache 的作用" `
   --model-path "D:\models\Qwen3-0.6B-int8-onnx" `
   --scene deep `
   --max-new-tokens 512 `
@@ -104,16 +104,16 @@ dotnet run --project Qwen3.Cli -- "解释 KV Cache 的作用" `
 
 ```powershell
 $env:QWEN_MODEL_PATH = "D:\models\Qwen3-0.6B-int8-onnx"
-dotnet run --project Qwen3.Cli -- "你好" --scene chitchat
+dotnet run --project Onar.Cli -- "你好" --scene chitchat
 ```
 
 ### 交互式控制台
 
 ```powershell
-dotnet run --project Qwen3.Console -- "D:\models\Qwen3-0.6B-int8-onnx"
+dotnet run --project Onar.Console -- "D:\models\Qwen3-0.6B-int8-onnx"
 ```
 
-`Qwen3.Console` 的第一个位置参数是模型目录；也可使用 `QWEN_MODEL_PATH`。启动后输入问题开始对话，输入 `q`、`quit` 或 `exit` 退出。
+`Onar.Console` 的第一个位置参数是模型目录；也可使用 `QWEN_MODEL_PATH`。启动后输入问题开始对话，输入 `q`、`quit` 或 `exit` 退出。
 
 ## CLI 参数速览
 
@@ -134,7 +134,7 @@ dotnet run --project Qwen3.Console -- "D:\models\Qwen3-0.6B-int8-onnx"
 ## 推理 API 示例
 
 ```csharp
-using Qwen3.Inference;
+using Onar.Inference;
 
 var assistantConfig = new AssistantConfig
 {
@@ -174,7 +174,7 @@ Console.WriteLine($"生成速度：{result.Generation.TokensPerSecond:F1} tokens
 - 目标框架：.NET 9
 - 命令行：`System.CommandLine 2.0.13`
 - CPU 推理：`Microsoft.ML.OnnxRuntime 1.31.0`、`Microsoft.ML.OnnxRuntimeGenAI 0.18.0`
-- 可选 GPU 推理：在同一个 `Qwen3.Inference` 工程中通过 `InferenceBackend` 和 `CudaVersion` 选择 CUDA 包
+- 可选 GPU 推理：在同一个 `Onar.Inference` 工程中通过 `InferenceBackend` 和 `CudaVersion` 选择 CUDA 包
 - Tokenizer：`Tokenizers.DotNet 1.4.1`
 - 日志：`Microsoft.Extensions.Logging.Console 9.0.0`
 

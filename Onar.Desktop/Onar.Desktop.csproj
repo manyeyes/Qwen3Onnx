@@ -1,0 +1,74 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+		<PropertyGroup>
+				<OutputType>WinExe</OutputType>
+				<TargetFramework>net9.0</TargetFramework>
+				<ImplicitUsings>enable</ImplicitUsings>
+				<Nullable>enable</Nullable>
+				<AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+
+				<!-- 基础元信息 -->
+				<AssemblyName>Onar.Desktop</AssemblyName>
+				<RootNamespace>Onar.Desktop</RootNamespace>
+				<Title>Onar Desktop</Title>
+				<Description>Avalonia-based cross-platform desktop UI for Qwen3 ONNX inference</Description>
+				<Authors>manyeyes and contributors</Authors>
+				<Version>0.3.0</Version>
+				<AssemblyVersion>0.3.0.0</AssemblyVersion>
+				<FileVersion>0.3.0.0</FileVersion>
+				<Copyright>Copyright © manyeyes and contributors 2026</Copyright>
+				<RepositoryUrl>https://github.com/manyeyes/Onar</RepositoryUrl>
+				<RepositoryType>git</RepositoryType>
+
+				<!-- Avalonia & 发布预设，避免裁剪坑（ONNX原生库） -->
+				<UseAppHost>true</UseAppHost>
+				<PublishSingleFile>false</PublishSingleFile>
+				<PublishAot>true</PublishAot>
+				<SelfContained>false</SelfContained>
+				<EnableTrim>false</EnableTrim>
+				<TrimMode>partial</TrimMode>
+				<InferenceBackend Condition="'$(InferenceBackend)' == ''">Gpu</InferenceBackend>
+				<CudaVersion Condition="'$(CudaVersion)' == ''">12</CudaVersion>
+		</PropertyGroup>
+
+		<PropertyGroup Condition="'$(InferenceBackend)' == 'Gpu'">
+				<DefineConstants>$(DefineConstants);INFERENCE_BACKEND_GPU</DefineConstants>
+		</PropertyGroup>
+		
+		<PropertyGroup Condition="'$(InferenceBackend)' == 'Cpu'">
+			<DefineConstants>$(DefineConstants);INFERENCE_BACKEND_CPU</DefineConstants>
+		</PropertyGroup>
+
+		<!-- 把Assets全部打包为Avalonia资源 -->
+		<ItemGroup>
+				<AvaloniaResource Include="Assets\**" />
+		</ItemGroup>
+		<ItemGroup>
+		  <AvaloniaXaml Remove="Views\ChatView - 复制.axaml" />
+		</ItemGroup>
+		<ItemGroup>
+		  <Compile Remove="Views\ChatView - 复制.axaml.cs" />
+		</ItemGroup>
+
+		<ItemGroup>
+				<ProjectReference Include="..\Onar.Inference\Onar.Inference.csproj" AdditionalProperties="InferenceBackend=$(InferenceBackend);CudaVersion=$(CudaVersion)">
+						<SetProperties>InferenceBackend=$(InferenceBackend);CudaVersion=$(CudaVersion)</SetProperties>						
+				</ProjectReference>
+		</ItemGroup>
+
+		<ItemGroup>
+				<PackageReference Include="Avalonia" Version="12.1.4" />
+				<PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+				<PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+				<PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+				<PackageReference Include="Markdown.Avalonia.Tight" Version="12.0.0-a3" />
+				<PackageReference Include="Material.Icons.Avalonia" Version="3.0.2" />
+				<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+				<PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+				<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
+		</ItemGroup>
+
+		<Target Name="ValidateInferenceBackend" BeforeTargets="PrepareForBuild">
+				<Error Condition="'$(InferenceBackend)' != 'Cpu' and '$(InferenceBackend)' != 'Gpu'" Text="InferenceBackend must be either Cpu or Gpu." />
+				<Error Condition="'$(InferenceBackend)' == 'Gpu' and '$(CudaVersion)' != '12' and '$(CudaVersion)' != '13'" Text="CudaVersion must be either 12 or 13 when InferenceBackend=Gpu." />
+		</Target>
+</Project>
