@@ -38,6 +38,18 @@ public partial class MessageViewModel : ObservableObject
     private bool wasInterrupted;
 
     [ObservableProperty]
+    private string? messageId;
+
+    [ObservableProperty]
+    private int tokenCount;
+
+    [ObservableProperty]
+    private double generationTimeSeconds;
+
+    [ObservableProperty]
+    private string stopReason = string.Empty;
+
+    [ObservableProperty]
     private bool isTextSelectionMode;
 
     // 用户气泡：浅灰圆角；助手：完全透明
@@ -79,8 +91,15 @@ public partial class MessageViewModel : ObservableObject
     public bool IsAssistant => !IsUser;
     public bool IsNotPending => !IsPending;
     public bool IsMarkdownVisible => IsNotPending && IsAssistant && !IsTextSelectionMode;
+    public bool CanDelete => !IsPending && !string.IsNullOrWhiteSpace(MessageId);
+    public bool HasGenerationStats => IsAssistant &&
+        (WasInterrupted || GenerationTimeSeconds > 0 || !string.IsNullOrWhiteSpace(StopReason));
+    public string GenerationStatsTooltip =>
+        $"生成速度：{(GenerationTimeSeconds > 0 ? TokenCount / GenerationTimeSeconds : 0):F1} tokens/s\n" +
+        $"生成 tokens：{TokenCount}\n" +
+        $"耗时：{GenerationTimeSeconds:F2}s\n" +
+        $"停止原因：{(WasInterrupted ? "用户停止生成" : string.IsNullOrWhiteSpace(StopReason) ? "未知" : StopReason)}";
     public string DisplayRole => IsUser ? "用户" : "助手";
-    public string SelectionModeGlyph => IsTextSelectionMode ? "¶" : "▤";
 
     public bool IsUser => Role == "user";
 
@@ -96,7 +115,6 @@ public partial class MessageViewModel : ObservableObject
     private void OnTextSelectionModeChanged()
     {
         OnPropertyChanged(nameof(SelectionModeTooltip));
-        OnPropertyChanged(nameof(SelectionModeGlyph));
         OnPropertyChanged(nameof(IsMarkdownVisible));
     }
 
@@ -109,6 +127,7 @@ public partial class MessageViewModel : ObservableObject
         OnPropertyChanged(nameof(BubbleAlignment));
         OnPropertyChanged(nameof(BubbleMargin));
         OnPropertyChanged(nameof(IsMarkdownVisible));
+        OnPropertyChanged(nameof(HasGenerationStats));
         OnPropertyChanged(nameof(BubbleMaxWidth));
         OnPropertyChanged(nameof(BubbleColumnSpan)); 
         OnPropertyChanged(nameof(BubbleBackground));
@@ -122,6 +141,30 @@ public partial class MessageViewModel : ObservableObject
             OnPropertyChanged(nameof(MarkdownContent));
             OnPropertyChanged(nameof(IsMarkdownVisible));
         }
+    }
+
+    partial void OnMessageIdChanged(string? value) =>
+        OnPropertyChanged(nameof(CanDelete));
+
+    partial void OnTokenCountChanged(int value) =>
+        OnGenerationStatsChanged();
+
+    partial void OnGenerationTimeSecondsChanged(double value) =>
+        OnGenerationStatsChanged();
+
+    partial void OnStopReasonChanged(string value) =>
+        OnGenerationStatsChanged();
+
+    partial void OnWasInterruptedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(HasGenerationStats));
+        OnPropertyChanged(nameof(GenerationStatsTooltip));
+    }
+
+    private void OnGenerationStatsChanged()
+    {
+        OnPropertyChanged(nameof(HasGenerationStats));
+        OnPropertyChanged(nameof(GenerationStatsTooltip));
     }
 
     public void ApplyStreamingSnapshot(string thinkingContent, string answer)
@@ -150,16 +193,14 @@ public partial class MessageViewModel : ObservableObject
     public static (string Thinking, string Answer) ParseStreamingContent(string content)
     {
         var normalized = NormalizeThinkTags(content);
-        var start = normalized.IndexOf("<think>", StringComparison.Ordinal);
-        var thinking = string.Empty;
-        if (start >= 0)
+        var openingIndex = normalized.IndexOf("<think>", StringComparison.Ordinal);
+        if (openingIndex < 0 ||
+            !string.IsNullOrWhiteSpace(normalized[..openingIndex]))
         {
-            start += "<think>".Length;
-            var end = normalized.IndexOf("</think>", start, StringComparison.Ordinal);
-            thinking = (end < 0 ? normalized[start..] : normalized[start..end]).Trim();
+            return (string.Empty, content.Trim());
         }
 
-        return (thinking, ExtractAnswerNormalized(normalized));
+        return (ExtractThinking(normalized), ExtractAnswerNormalized(normalized));
     }
 
     public sealed class StreamingContentParser
@@ -203,20 +244,29 @@ public partial class MessageViewModel : ObservableObject
         {
             var pending = _pending.ToString();
             var next = (Index: -1, Value: string.Empty, IsOpen: false);
-            foreach (var marker in OpenMarkers)
+            if (!_insideThinking && string.IsNullOrWhiteSpace(_answer.ToString()))
             {
-                var index = pending.IndexOf(marker, StringComparison.Ordinal);
-                if (index >= 0 && (next.Index < 0 || index < next.Index))
+                foreach (var marker in OpenMarkers)
                 {
-                    next = (index, marker, true);
+                    var index = pending.IndexOf(marker, StringComparison.Ordinal);
+                    if (index >= 0 &&
+                        string.IsNullOrWhiteSpace(pending[..index]) &&
+                        (next.Index < 0 || index < next.Index))
+                    {
+                        next = (index, marker, true);
+                    }
                 }
             }
-            foreach (var marker in CloseMarkers)
+
+            if (_insideThinking)
             {
-                var index = pending.IndexOf(marker, StringComparison.Ordinal);
-                if (index >= 0 && (next.Index < 0 || index < next.Index))
+                foreach (var marker in CloseMarkers)
                 {
-                    next = (index, marker, false);
+                    var index = pending.IndexOf(marker, StringComparison.Ordinal);
+                    if (index >= 0 && (next.Index < 0 || index < next.Index))
+                    {
+                        next = (index, marker, false);
+                    }
                 }
             }
             return next;
@@ -246,7 +296,11 @@ public partial class MessageViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsNotPending));
         OnPropertyChanged(nameof(IsMarkdownVisible));
-        OnPropertyChanged(value ? nameof(StreamingAnswer) : nameof(MarkdownContent));
+        OnPropertyChanged(nameof(StreamingAnswer));
+        OnPropertyChanged(nameof(MarkdownContent));
+        OnPropertyChanged(nameof(ThinkingContent));
+        OnPropertyChanged(nameof(HasThinking));
+        OnPropertyChanged(nameof(CanDelete));
     }
 
     partial void OnIsThinkingExpandedChanged(bool value)
@@ -269,7 +323,7 @@ public partial class MessageViewModel : ObservableObject
     {
         var normalized = NormalizeThinkTags(content);
         var start = normalized.IndexOf("<think>", StringComparison.Ordinal);
-        if (start < 0)
+        if (start < 0 || !string.IsNullOrWhiteSpace(normalized[..start]))
         {
             return string.Empty;
         }
@@ -286,6 +340,13 @@ public partial class MessageViewModel : ObservableObject
 
     private static string ExtractAnswerNormalized(string normalized)
     {
+        var openingIndex = normalized.IndexOf("<think>", StringComparison.Ordinal);
+        if (openingIndex < 0 ||
+            !string.IsNullOrWhiteSpace(normalized[..openingIndex]))
+        {
+            return normalized.Trim();
+        }
+
         var closingIndex = normalized.LastIndexOf("</think>", StringComparison.Ordinal);
         if (closingIndex >= 0)
         {
@@ -293,11 +354,7 @@ public partial class MessageViewModel : ObservableObject
         }
         else
         {
-            var openingIndex = normalized.IndexOf("<think>", StringComparison.Ordinal);
-            if (openingIndex >= 0)
-            {
-                normalized = normalized[..openingIndex];
-            }
+            normalized = normalized[..openingIndex];
         }
         return Regex.Replace(normalized, @"<\|im_(?:start|end)\|>", string.Empty).Trim();
     }

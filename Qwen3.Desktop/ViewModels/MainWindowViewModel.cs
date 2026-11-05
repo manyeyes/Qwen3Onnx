@@ -71,7 +71,6 @@ public partial class MainWindowViewModel : ObservableObject
     public string IdentityInitial => string.IsNullOrEmpty(CurrentUser?.Username)
         ? "访"
         : CurrentUser.Username[..1].ToUpperInvariant();
-    public string BottomMenuGlyph => IsBottomMenuOpen ? "⌄" : "⌃";
     public string AuthenticationTitle => IsRegisterMode ? "创建本地账户" : "本地账户登录";
     public string AuthenticationSubmitText => IsRegisterMode ? "注册并登录" : "登录";
     public string AuthenticationToggleText => IsRegisterMode ? "已有账户？返回登录" : "没有账户？立即注册";
@@ -146,7 +145,6 @@ public partial class MainWindowViewModel : ObservableObject
             SidebarWidth = Math.Clamp(width, 200, 440);
         }
     }
-    partial void OnIsBottomMenuOpenChanged(bool value) => OnPropertyChanged(nameof(BottomMenuGlyph));
     partial void OnIsRegisterModeChanged(bool value)
     {
         OnPropertyChanged(nameof(AuthenticationTitle));

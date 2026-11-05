@@ -6,18 +6,18 @@ namespace Qwen3.Desktop.Views;
 
 public sealed partial class ChatView : UserControl
 {
-    // ÊÇ·ñ×Ô¶¯¸úËæµ½µ×²¿¡£ÓÃ»§ÊÖ¶¯ÉÏ¹öºóÖÃ false£¬¹ö»Øµ×²¿»òµã°´Å¥ºóÖÃ true¡£
+    // ï¿½Ç·ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½æµ½ï¿½×²ï¿½ï¿½ï¿½ï¿½Ã»ï¿½ï¿½Ö¶ï¿½ï¿½Ï¹ï¿½ï¿½ï¿½ï¿½ï¿½ falseï¿½ï¿½ï¿½ï¿½ï¿½Øµ×²ï¿½ï¿½ï¿½ã°´Å¥ï¿½ï¿½ï¿½ï¿½ trueï¿½ï¿½
     private bool _autoScroll = true;
-    // ·ÀÖ¹³ÌÐò»¯¹ö¶¯Ê±µÝ¹é´¥·¢ ScrollChanged
+    // ï¿½ï¿½Ö¹ï¿½ï¿½ï¿½ò»¯¹ï¿½ï¿½ï¿½Ê±ï¿½Ý¹é´¥ï¿½ï¿½ ScrollChanged
     private bool _suppressScrollChanged;
-    // ÏûÏ¢¼¯ºÏ¶©ÔÄ£¬ÓÃÓÚ"ÐÂÔöÏûÏ¢"Ê±Ç¿ÖÆ¹öµ½µ×
+    // ï¿½ï¿½Ï¢ï¿½ï¿½ï¿½Ï¶ï¿½ï¿½Ä£ï¿½ï¿½ï¿½ï¿½ï¿½"ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢"Ê±Ç¿ï¿½Æ¹ï¿½ï¿½ï¿½ï¿½ï¿½
     private ChatPageViewModel? _subscribedViewModel;
 
     public ChatView()
     {
         Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this);
         DataContextChanged += OnDataContextChanged;
-        // ²¼¾ÖÍê³ÉºóÏÈ¹öÒ»´Îµ½µ×²¿
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Éºï¿½ï¿½È¹ï¿½Ò»ï¿½Îµï¿½ï¿½×²ï¿½
         AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(ScrollToBottomIfAuto, DispatcherPriority.Loaded);
     }
 
@@ -40,7 +40,13 @@ public sealed partial class ChatView : UserControl
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        // »á»°ÇÐ»» / ÖØÐÂ¼ÓÔØÏûÏ¢Ê±£¬Ç¿ÖÆ¸úËæµ½µ×
+        if (e.PropertyName == nameof(ChatPageViewModel.IsBusy) &&
+            _subscribedViewModel is { IsBusy: false })
+        {
+            Dispatcher.UIThread.Post(FocusInput, DispatcherPriority.Background);
+        }
+
+        // ï¿½á»°ï¿½Ð»ï¿½ / ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢Ê±ï¿½ï¿½Ç¿ï¿½Æ¸ï¿½ï¿½æµ½ï¿½ï¿½
         if (e.PropertyName == nameof(ChatPageViewModel.Messages))
         {
             if (_subscribedViewModel is not null)
@@ -53,10 +59,21 @@ public sealed partial class ChatView : UserControl
         }
     }
 
+    private void FocusInput()
+    {
+        if (!IsVisible || VisualRoot is null ||
+            this.FindControl<TextBox>("InputTextBox") is not { IsEnabled: true } input)
+        {
+            return;
+        }
+
+        input.Focus();
+    }
+
     private void OnMessagesCollectionChanged(
         object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
-        // ÐÂÔöÏûÏ¢£¨·¢ËÍ»òÊÕµ½»Ø¸´£©Ê±£¬Ç¿ÖÆ¹öµ½µ×²¢»Ö¸´×Ô¶¯¸úËæ
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½ï¿½ï¿½ï¿½Í»ï¿½ï¿½Õµï¿½ï¿½Ø¸ï¿½ï¿½ï¿½Ê±ï¿½ï¿½Ç¿ï¿½Æ¹ï¿½ï¿½ï¿½ï¿½×²ï¿½ï¿½Ö¸ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½ï¿½
         if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add)
         {
             _autoScroll = true;
@@ -73,7 +90,7 @@ public sealed partial class ChatView : UserControl
 
         UpdateScrollState(scrollViewer);
 
-        // Á÷Ê½Êä³öÊ±£¬Èç¹û´¦ÓÚ×Ô¶¯¸úËæ×´Ì¬£¬³ÖÐø¹öµ½µ×
+        // ï¿½ï¿½Ê½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½ï¿½×´Ì¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         if (_autoScroll)
         {
             ScrollToBottom();
@@ -108,8 +125,8 @@ public sealed partial class ChatView : UserControl
         }
         finally
         {
-            // ³ÌÐò»¯¹ö¶¯Íê³Éºó£¬Ö÷¶¯Ë¢ÐÂÒ»´Î×´Ì¬£¨º¬°´Å¥¿É¼ûÐÔ£©£¬
-            // ÒòÎª ScrollChanged ÒÑ±»ÒÖÖÆ£¬²»ÄÜÒÀÀµËüÀ´¸üÐÂ¡£
+            // ï¿½ï¿½ï¿½ò»¯¹ï¿½ï¿½ï¿½ï¿½ï¿½Éºï¿½ï¿½ï¿½ï¿½ï¿½Ë¢ï¿½ï¿½Ò»ï¿½ï¿½×´Ì¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Å¥ï¿½É¼ï¿½ï¿½Ô£ï¿½ï¿½ï¿½
+            // ï¿½ï¿½Îª ScrollChanged ï¿½Ñ±ï¿½ï¿½ï¿½ï¿½Æ£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â¡ï¿½
             Dispatcher.UIThread.Post(
                 () =>
                 {
@@ -125,17 +142,17 @@ public sealed partial class ChatView : UserControl
         var scrollableHeight = scrollViewer.Extent.Height - scrollViewer.Viewport.Height;
         var distanceFromBottom = scrollableHeight - scrollViewer.Offset.Y;
 
-        // ¾àµ×²¿Ð¡ÓÚ 24px ÊÓÎª"ÔÚµ×²¿"
+        // ï¿½ï¿½×²ï¿½Ð¡ï¿½ï¿½ 24px ï¿½ï¿½Îª"ï¿½Úµ×²ï¿½"
         var atBottom = distanceFromBottom <= 24;
 
         if (atBottom)
         {
-            // ÓÃ»§¹ö»Øµ×²¿ ¡ú »Ö¸´×Ô¶¯¸úËæ
+            // ï¿½Ã»ï¿½ï¿½ï¿½ï¿½Øµ×²ï¿½ ï¿½ï¿½ ï¿½Ö¸ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½ï¿½
             _autoScroll = true;
         }
         else
         {
-            // ÓÃ»§ÊÖ¶¯ÉÏ¹ö ¡ú Í£Ö¹¸úËæ
+            // ï¿½Ã»ï¿½ï¿½Ö¶ï¿½ï¿½Ï¹ï¿½ ï¿½ï¿½ Í£Ö¹ï¿½ï¿½ï¿½ï¿½
             _autoScroll = false;
         }
 
@@ -143,7 +160,7 @@ public sealed partial class ChatView : UserControl
         //{
         //    button.IsVisible = !atBottom;
         //}
-        // ¸ÄÎª¿ØÖÆ Border µÄ¿É¼ûÐÔ£º
+        // ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ Border ï¿½Ä¿É¼ï¿½ï¿½Ô£ï¿½
         if (this.FindControl<Border>("ScrollToBottomBorder") is { } border)
         {
             border.IsVisible = !atBottom;

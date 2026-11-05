@@ -113,6 +113,34 @@ public partial class ChatPageViewModel : ObservableObject
         _logger = services.LoggerFactory.CreateLogger<ChatPageViewModel>();
     }
 
+    [RelayCommand]
+    private async Task DeleteMessageAsync(MessageViewModel? message)
+    {
+        var conversationId = ConversationId;
+        var messageId = message?.MessageId;
+        if (message is null || IsBusy || string.IsNullOrWhiteSpace(conversationId) ||
+            string.IsNullOrWhiteSpace(messageId))
+        {
+            return;
+        }
+
+        try
+        {
+            await _services.Chat.DeleteMessageAsync(
+                conversationId, messageId, _shell.CurrentUser?.Id);
+            Messages.Remove(message);
+            OnPropertyChanged(nameof(HasNoMessages));
+            UpdateLatestAssistantAction();
+            StatusText = "消息已删除。";
+            ConversationsChanged?.Invoke();
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Deleting chat message failed");
+            StatusText = $"删除消息失败：{exception.Message}";
+        }
+    }
+
     public async Task RefreshModelsAsync(CancellationToken cancellationToken = default)
     {
         var previousId = SelectedModel?.Id;
@@ -159,7 +187,7 @@ public partial class ChatPageViewModel : ObservableObject
 
         var models = await _services.Database.GetModelsAsync(cancellationToken);
         var selectedModel = models.FirstOrDefault(model => model.Id == conversation.ModelId &&
-            ModelDownloadService.IsInstalled(model));
+            ModelDownloadService.IsInstalled(model));  
         var storedMessages = await _services.Chat.GetMessagesAsync(
             conversation.Id, ownerUserId, cancellationToken);
         if (IsBusy || !string.Equals(ownerUserId, _shell.CurrentUser?.Id, StringComparison.Ordinal))
@@ -176,13 +204,17 @@ public partial class ChatPageViewModel : ObservableObject
             Messages = new ObservableCollection<MessageViewModel>(storedMessages.Select(message =>
                 new MessageViewModel
                 {
+                    MessageId = message.Id,
                     Role = message.Role,
                     Content = message.Role == "user" && message.Attachments.Count > 0
                         ? GetStoredUserDisplayContent(message.Content)
                         : message.Content,
                     PromptContent = message.Role == "user" ? message.Content : string.Empty,
                     AttachmentNames = new ObservableCollection<string>(message.Attachments),
-                    WasInterrupted = message.WasInterrupted
+                    WasInterrupted = message.WasInterrupted,
+                    TokenCount = message.TokenCount,
+                    GenerationTimeSeconds = message.GenerationTimeSeconds,
+                    StopReason = message.StopReason
                 }));
             UpdateLatestAssistantAction();
             _attachments.Clear();
@@ -346,8 +378,10 @@ public partial class ChatPageViewModel : ObservableObject
     [RelayCommand]
     private async Task RegenerateReplyAsync(MessageViewModel? message, CancellationToken cancellationToken)
     {
+        var selectedModel = SelectedModel;
+        var conversationId = ConversationId;
         if (message is null || !message.CanRegenerate || IsBusy ||
-            ConversationId is null || SelectedModel is null)
+            conversationId is null || selectedModel is null)
         {
             return;
         }
@@ -366,15 +400,18 @@ public partial class ChatPageViewModel : ObservableObject
         try
         {
             var result = await _services.Chat.RegenerateLastReplyAsync(
-                ConversationId,
+                conversationId,
                 _shell.CurrentUser?.Id,
-                SelectedModel,
+                selectedModel,
                 BuildGenerationConfig(),
                 streamUpdater.Append,
                 generationCancellation.Token);
             elapsed.Stop();
             await streamUpdater.CompleteAsync(result.Assistant.Answer);
             message.WasInterrupted = result.Assistant.Generation.WasCancelled;
+            message.TokenCount = result.Assistant.Generation.TotalTokens;
+            message.GenerationTimeSeconds = result.Assistant.Generation.TotalTimeSeconds;
+            message.StopReason = result.Assistant.Generation.StopReason;
             StatusText = result.Assistant.Generation.WasCancelled
                 ? "已停止生成，部分回复已保存。"
                 : FormatGenerationStatus(result.Assistant, elapsed.Elapsed);
@@ -475,7 +512,11 @@ public partial class ChatPageViewModel : ObservableObject
         };
         Messages.Add(userMessage);
         OnPropertyChanged(nameof(HasNoMessages));
-        var assistantMessage = new MessageViewModel { Role = "assistant", IsPending = true };
+        var assistantMessage = new MessageViewModel
+        {
+            Role = "assistant",
+            IsPending = true
+        };
         Messages.Add(assistantMessage);
         UpdateLatestAssistantAction();
         StatusText = "正在加载模型并生成回答…";
@@ -501,8 +542,13 @@ public partial class ChatPageViewModel : ObservableObject
             ConversationId = result.Conversation.Id;
             ConversationTitle = result.Conversation.Title;
             userMessage.PromptContent = result.PromptText;
+            userMessage.MessageId = result.UserMessageId;
             await streamUpdater.CompleteAsync(result.Assistant.Answer);
+            assistantMessage.MessageId = result.AssistantMessageId;
             assistantMessage.WasInterrupted = result.Assistant.Generation.WasCancelled;
+            assistantMessage.TokenCount = result.Assistant.Generation.TotalTokens;
+            assistantMessage.GenerationTimeSeconds = result.Assistant.Generation.TotalTimeSeconds;
+            assistantMessage.StopReason = result.Assistant.Generation.StopReason;
             StatusText = result.Assistant.Generation.WasCancelled
                 ? "已停止生成，本轮输入与部分回复已保存，可继续对话。"
                 : FormatGenerationStatus(result.Assistant, elapsed.Elapsed);
@@ -557,8 +603,9 @@ public partial class ChatPageViewModel : ObservableObject
         {
             message.CanRegenerate = false;
         }
-        var latestMessage = Messages.LastOrDefault();
-        if (latestMessage is { IsAssistant: true, IsPending: false })
+        if (Messages.Count >= 2 &&
+            Messages[^1] is { IsAssistant: true, IsPending: false } latestMessage &&
+            Messages[^2].IsUser)
         {
             latestMessage.CanRegenerate = true;
         }
@@ -615,7 +662,7 @@ public partial class ChatPageViewModel : ObservableObject
         private readonly Action<Exception> _onParseError;
         private readonly object _gate = new();
         private readonly StringBuilder _pendingContent = new();
-        private readonly MessageViewModel.StreamingContentParser _parser = new();
+        private readonly MessageViewModel.StreamingContentParser _parser;
         private readonly DispatcherTimer _timer;
         private bool _flushScheduled;
         private bool _stopped;
@@ -624,6 +671,7 @@ public partial class ChatPageViewModel : ObservableObject
         {
             _message = message;
             _onParseError = onParseError;
+            _parser = new MessageViewModel.StreamingContentParser();
             _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
             _timer.Tick += OnTimerTick;
             _timer.Start();

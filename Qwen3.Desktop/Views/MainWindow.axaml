@@ -2,6 +2,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Qwen3.Desktop.ViewModels"
         xmlns:views="using:Qwen3.Desktop.Views"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:icons="clr-namespace:Material.Icons;assembly=Material.Icons"
         x:Class="Qwen3.Desktop.Views.MainWindow"
         x:CompileBindings="False"
         Icon="/Assets/favicon.ico"
@@ -39,7 +41,7 @@
         <Setter Property="HorizontalAlignment" Value="Center"/>
       </Style>
   </Window.Styles>
-  <Grid ColumnDefinitions="Auto,8,*" Background="#F5F7FA">
+  <Grid ColumnDefinitions="Auto,3,*" Background="#F5F7FA">
 
     <!-- ==================== 左侧导航栏 ==================== -->
     <Border Grid.Column="0" Width="{Binding SidebarWidth}" Background="#FFFFFF"
@@ -55,11 +57,14 @@
               <TextBlock Text="Qwen3" FontSize="21" FontWeight="Bold" Foreground="#175CD3"
                          HorizontalAlignment="Left" VerticalAlignment="Center"
                          IsVisible="{Binding IsSidebarExpanded}"/>
-              <Button Content="☰" Command="{Binding ToggleSidebarCommand}"
+              <Button Command="{Binding ToggleSidebarCommand}"
                       Classes="nav-header-button"
                       Classes.nav-collapsed="{Binding !IsSidebarExpanded}"
                       Padding="8,5" Background="Transparent" BorderThickness="0"
-                      Foreground="#344054"/>
+                      Foreground="#344054">
+                <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Menu}"
+                                            Width="20" Height="20"/>
+              </Button>
             </Grid>
 
             <!-- 新对话 -->
@@ -69,7 +74,8 @@
                     Padding="12,10"
                     Background="#EFF8FF" Foreground="#175CD3" BorderBrush="#B2DDFF">
               <StackPanel Orientation="Horizontal" Spacing="9">
-                <TextBlock Text="＋"/>
+                <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Plus}"
+                                            Width="18" Height="18"/>
                 <TextBlock Text="新对话" IsVisible="{Binding IsSidebarExpanded}"/>
               </StackPanel>
             </Button>
@@ -81,7 +87,8 @@
                     Padding="12,10"
                     Background="Transparent" Foreground="#344054" BorderThickness="0">
               <StackPanel Orientation="Horizontal" Spacing="9">
-                <TextBlock Text="▦"/>
+                <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.ViewGridOutline}"
+                                            Width="18" Height="18"/>
                 <TextBlock Text="模型管理" IsVisible="{Binding IsSidebarExpanded}"/>
               </StackPanel>
             </Button>
@@ -111,16 +118,19 @@
                                     Foreground="#344054" BorderThickness="0" MinWidth="0"
                                     ToolTip.Tip="{Binding Title}">
                               <Grid ColumnDefinitions="Auto,*" ColumnSpacing="5">
-                                <TextBlock Text="◆" IsVisible="{Binding IsPinned}"
-                                           FontSize="10" Foreground="#175CD3"/>
+                                <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Pin}"
+                                                            IsVisible="{Binding IsPinned}"
+                                                            Width="13" Height="13" Foreground="#175CD3"/>
                                 <TextBlock Grid.Column="1" Text="{Binding Title}"
                                            TextTrimming="CharacterEllipsis"/>
                               </Grid>
                             </Button>
-                            <Button Grid.Column="1" Content="⋯"
+                            <Button Grid.Column="1"
                                     Padding="5,2" Margin="0,1"
                                     Background="Transparent" BorderThickness="0"
                                     Foreground="#667085" ToolTip.Tip="对话操作">
+                              <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.DotsHorizontal}"
+                                                          Width="18" Height="18"/>
                               <Button.Flyout>
                                 <MenuFlyout Placement="Bottom">
                                   <MenuItem Header="{Binding PinMenuText}"
@@ -155,7 +165,9 @@
                         Background="Transparent" BorderThickness="0" Padding="10,9"
                         Foreground="#344054">
                   <StackPanel Orientation="Horizontal" Spacing="10">
-                    <TextBlock Text="▤"/><TextBlock Text="管理我的对话" IsVisible="{Binding IsSidebarExpanded}"/>
+                    <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.MessageTextOutline}"
+                                                Width="18" Height="18"/>
+                    <TextBlock Text="管理我的对话" IsVisible="{Binding IsSidebarExpanded}"/>
                   </StackPanel>
                 </Button>
                 <Button Command="{Binding NavigateToCommand}" CommandParameter="Profile"
@@ -163,7 +175,9 @@
                         Background="Transparent" BorderThickness="0" Padding="10,9"
                         Foreground="#344054">
                   <StackPanel Orientation="Horizontal" Spacing="10">
-                    <TextBlock Text="◉"/><TextBlock Text="用户中心" IsVisible="{Binding IsSidebarExpanded}"/>
+                    <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.AccountCircleOutline}"
+                                                Width="18" Height="18"/>
+                    <TextBlock Text="用户中心" IsVisible="{Binding IsSidebarExpanded}"/>
                   </StackPanel>
                 </Button>
                 <Button Command="{Binding NavigateToCommand}" CommandParameter="Users"
@@ -171,35 +185,45 @@
                         Background="Transparent" BorderThickness="0" Padding="10,9"
                         Foreground="#344054">
                   <StackPanel Orientation="Horizontal" Spacing="10">
-                    <TextBlock Text="⚙"/><TextBlock Text="用户管理" IsVisible="{Binding IsSidebarExpanded}"/>
+                    <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.AccountCogOutline}"
+                                                Width="18" Height="18"/>
+                    <TextBlock Text="用户管理" IsVisible="{Binding IsSidebarExpanded}"/>
                   </StackPanel>
                 </Button>
                 <Button Command="{Binding OpenAuthenticationCommand}" IsVisible="{Binding IsGuest}"
                         HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
                         Padding="10,9" Foreground="#344054">
                   <StackPanel Orientation="Horizontal" Spacing="10">
-                    <TextBlock Text="⇥"/><TextBlock Text="登录 / 注册" IsVisible="{Binding IsSidebarExpanded}"/>
+                    <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Login}"
+                                                Width="18" Height="18"/>
+                    <TextBlock Text="登录 / 注册" IsVisible="{Binding IsSidebarExpanded}"/>
                   </StackPanel>
                 </Button>
                 <Button Command="{Binding OpenWebsiteCommand}" HorizontalContentAlignment="Left"
                         Background="Transparent" BorderThickness="0" Padding="10,9"
                         Foreground="#344054">
                   <StackPanel Orientation="Horizontal" Spacing="10">
-                    <TextBlock Text="↗"/><TextBlock Text="官网" IsVisible="{Binding IsSidebarExpanded}"/>
+                    <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.OpenInNew}"
+                                                Width="18" Height="18"/>
+                    <TextBlock Text="官网" IsVisible="{Binding IsSidebarExpanded}"/>
                   </StackPanel>
                 </Button>
                 <Button Command="{Binding OpenAboutPageCommand}" HorizontalContentAlignment="Left"
                         Background="Transparent" BorderThickness="0" Padding="10,9"
                         Foreground="#344054">
                   <StackPanel Orientation="Horizontal" Spacing="10">
-                    <TextBlock Text="ⓘ"/><TextBlock Text="关于" IsVisible="{Binding IsSidebarExpanded}"/>
+                    <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.InformationOutline}"
+                                                Width="18" Height="18"/>
+                    <TextBlock Text="关于" IsVisible="{Binding IsSidebarExpanded}"/>
                   </StackPanel>
                 </Button>
                 <Button Command="{Binding SignOutCommand}" IsVisible="{Binding IsLoggedIn}"
                         HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
                         Padding="10,9" Foreground="#B42318">
                   <StackPanel Orientation="Horizontal" Spacing="10">
-                    <TextBlock Text="⇤"/><TextBlock Text="退出登录" IsVisible="{Binding IsSidebarExpanded}"/>
+                    <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Logout}"
+                                                Width="18" Height="18"/>
+                    <TextBlock Text="退出登录" IsVisible="{Binding IsSidebarExpanded}"/>
                   </StackPanel>
                 </Button>
               </StackPanel>
@@ -221,8 +245,14 @@
                              Foreground="#344054" TextTrimming="CharacterEllipsis"/>
                   <TextBlock Text="账户与更多" FontSize="11" Foreground="#667085"/>
                 </StackPanel>
-                <TextBlock Grid.Column="2" Text="{Binding BottomMenuGlyph}"
-                           Foreground="#667085" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                  <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.ChevronUp}"
+                                              Width="16" Height="16"
+                                              IsVisible="{Binding !IsBottomMenuOpen}"/>
+                  <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.ChevronDown}"
+                                              Width="16" Height="16"
+                                              IsVisible="{Binding IsBottomMenuOpen}"/>
+                </StackPanel>
               </Grid>
             </Button>
           </StackPanel>
@@ -308,7 +338,10 @@
         <StackPanel Spacing="12">
           <Grid ColumnDefinitions="*,Auto">
             <TextBlock Text="{Binding AuthenticationTitle}" FontSize="22" FontWeight="SemiBold"/>
-            <Button Grid.Column="1" Content="×" Command="{Binding CloseAuthenticationCommand}"/>
+            <Button Grid.Column="1" Command="{Binding CloseAuthenticationCommand}">
+              <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Close}"
+                                          Width="18" Height="18"/>
+            </Button>
           </Grid>
           <TextBox Text="{Binding LoginUsername}" PlaceholderText="用户名"/>
           <TextBox Text="{Binding LoginPassword}" PasswordChar="●" PlaceholderText="登录密码"
