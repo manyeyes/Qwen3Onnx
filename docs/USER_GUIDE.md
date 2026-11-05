@@ -1,13 +1,13 @@
-# Qwen3 ONNX .NET 推理项目使用与集成指南
+# Onar - LLM ONNX .NET 推理项目使用与集成指南
 
 本文面向使用者、.NET 集成开发者和后续推理引擎扩展开发者，介绍项目架构、Qwen3 与当前 ONNX 模型约定、模型获取、构建运行、CLI、控制台和桌面端使用、生成参数、C# 调用 API、日志排查及新增模型引擎的方法。
 
-> 代码行为可能随版本演进。命令行的最终参数列表请始终以 `Qwen3.Cli --help` 输出为准。
+> 代码行为可能随版本演进。命令行的最终参数列表请始终以 `Onar.Cli --help` 输出为准。
 
 ## 目录
 
 1. [项目简介](#1-项目简介)
-2. [Qwen3 模型简介](#2-qwen3-模型简介)
+2. [LLM 模型简介](#2-llm-模型简介)
 3. [架构与数据流](#3-架构与数据流)
 4. [环境与依赖](#4-环境与依赖)
 5. [下载模型与准备文件](#5-下载模型与准备文件)
@@ -23,18 +23,18 @@
 
 ## 1. 项目简介
 
-本项目将 Qwen3 本地 ONNX 推理封装为多个职责清晰的 .NET 工程：
+本项目将 LLM 本地 ONNX 推理封装为多个职责清晰的 .NET 工程：
 
 | 工程 | 类型 | 职责 |
 | --- | --- | --- |
-| `Qwen3.Inference` | 类库 | 配置、推理引擎抽象与工厂、ONNX Runtime 实现、生成策略、提示词、对话历史及统计结果 |
-| `Qwen3.Cli` | 控制台应用 | 单次问答命令行入口、参数解析与验证、帮助、日志与退出码 |
-| `Qwen3.Console` | 控制台应用 | 面向人工交互的多轮聊天体验、场景和思考模式命令 |
-| `Qwen3.Desktop` | Avalonia 桌面应用 | MVVM 聊天界面、模型管理、SQLite 历史和本地账户 |
+| `Onar.Inference` | 类库 | 配置、推理引擎抽象与工厂、ONNX Runtime 实现、生成策略、提示词、对话历史及统计结果 |
+| `Onar.Cli` | 控制台应用 | 单次问答命令行入口、参数解析与验证、帮助、日志与退出码 |
+| `Onar.Console` | 控制台应用 | 面向人工交互的多轮聊天体验、场景和思考模式命令 |
+| `Onar.Desktop` | Avalonia 桌面应用 | MVVM 聊天界面、模型管理、SQLite 历史和本地账户 |
 
-解决方案文件为 `Qwen3Onnx.sln`。CLI、Console 和桌面端都使用同一个 `Qwen3.Inference` 工程。桌面端将后端属性传递给推理项目，以选择对应 ONNX Runtime 包；模型会在 assistant 创建时加载，在进程内复用；一次 CLI 进程处理一个请求，交互式 Console 进程可持续处理多轮输入。
+解决方案文件为 `Onar.sln`。CLI、Console 和桌面端都使用同一个 `Onar.Inference` 工程。桌面端将后端属性传递给推理项目，以选择对应 ONNX Runtime 包；模型会在 assistant 创建时加载，在进程内复用；一次 CLI 进程处理一个请求，交互式 Console 进程可持续处理多轮输入。
 
-## 2. Qwen3 模型简介
+## 2. LLM 模型简介
 
 Qwen3 是阿里巴巴通义千问团队发布的大语言模型系列，包含不同参数规模和模型结构。本项目列出的 0.6B 与 1.7B ONNX 仓库是面向本地运行的小规模 checkpoint；本项目不负责模型训练、转换或量化。
 
@@ -84,20 +84,20 @@ INT8/W4A32 是模型仓库发布名称中的量化方案标识；应以对应仓
 ## 3. 架构与数据流
 
 ```text
-Qwen3.Cli ───────┐
+Onar.Cli ───────┐
                  ├── ChatAssistant ── IInferenceEngineFactory ── IInferenceEngine
-Qwen3.Console ───┘                                         ├── OnnxInferenceEngine
-Qwen3.Desktop ─────────────────────────────────────────────└── OnnxInferenceGenaiEngine
+Onar.Console ───┘                                         ├── OnnxInferenceEngine
+Onar.Desktop ─────────────────────────────────────────────└── OnnxInferenceGenaiEngine
                                                               ├── Tokenizers.DotNet
                                                               └── ONNX Runtime
 ```
 
-`Qwen3.Desktop` 根据模型元数据中的 `EngineId` 选择 ONNX 或 GenAI 引擎；桌面构建属性 `InferenceBackend` 与 `CudaVersion` 决定 `Qwen3.Inference` 所引用的 ONNX Runtime / GenAI NuGet 包。推理源代码和命名空间维持单份，避免 CPU/GPU 项目重复维护同一套实现。
+`Onar.Desktop` 根据模型元数据中的 `EngineId` 选择 ONNX 或 GenAI 引擎；桌面构建属性 `InferenceBackend` 与 `CudaVersion` 决定 `Onar.Inference` 所引用的 ONNX Runtime / GenAI NuGet 包。推理源代码和命名空间维持单份，避免 CPU/GPU 项目重复维护同一套实现。
 
 ### 3.1 应用层
 
-- `Qwen3.Cli` 解析单条请求；将选定场景作为基础配置，再应用显式命令行覆盖项。
-- `Qwen3.Console` 管理交互命令、全局 think 覆盖和场景选择。
+- `Onar.Cli` 解析单条请求；将选定场景作为基础配置，再应用显式命令行覆盖项。
+- `Onar.Console` 管理交互命令、全局 think 覆盖和场景选择。
 - 两者通过 `ChatAssistant` 使用统一的对话 API。
 
 ### 3.2 推理协调层
@@ -194,31 +194,31 @@ D:\models\Qwen3-0.6B-int8-onnx\
 
 ### 5.3 模型文件校验
 
-`Qwen3.Console` 启动时会检查 tokenizer、config 和默认 embedding/decoder 文件是否存在，并列出缺少的路径。拆分 ONNX 文件存在不代表图结构兼容；引擎初始化还会校验模型参数及 decoder 输入输出契约。GenAI 模型则须确保 `genai_config.json`、模型图及外部数据文件完整。
+`Onar.Console` 启动时会检查 tokenizer、config 和默认 embedding/decoder 文件是否存在，并列出缺少的路径。拆分 ONNX 文件存在不代表图结构兼容；引擎初始化还会校验模型参数及 decoder 输入输出契约。GenAI 模型则须确保 `genai_config.json`、模型图及外部数据文件完整。
 
 ## 6. 构建与运行
 
-在解决方案根目录（包含 `Qwen3Onnx.sln`）执行：
+在解决方案根目录（包含 `Onar.sln`）执行：
 
 ```powershell
-dotnet restore Qwen3Onnx.sln
-dotnet build Qwen3Onnx.sln
+dotnet restore Onar.sln
+dotnet build Onar.sln
 ```
 
 桌面端默认构建 GPU 后端（CUDA 12）。CPU 后端构建：
 
 ```powershell
-dotnet build Qwen3.Desktop\Qwen3.Desktop.csproj -p:InferenceBackend=Cpu
+dotnet build Onar.Desktop\Onar.Desktop.csproj -p:InferenceBackend=Cpu
 ```
 
 选择 CUDA 12 或 CUDA 13 后端：
 
 ```powershell
-dotnet build Qwen3.Desktop\Qwen3.Desktop.csproj -p:InferenceBackend=Gpu -p:CudaVersion=12
-dotnet build Qwen3.Desktop\Qwen3.Desktop.csproj -p:InferenceBackend=Gpu -p:CudaVersion=13
+dotnet build Onar.Desktop\Onar.Desktop.csproj -p:InferenceBackend=Gpu -p:CudaVersion=12
+dotnet build Onar.Desktop\Onar.Desktop.csproj -p:InferenceBackend=Gpu -p:CudaVersion=13
 ```
 
-`Qwen3.Desktop` 只引用 `Qwen3.Inference`，并将后端属性传递给推理项目。`InferenceBackend` 接受 `Cpu` 或 `Gpu`，默认值为 `Gpu`；`CudaVersion` 接受 `12` 或 `13`（默认值 `12`，仅 GPU 模式需要）。CPU 选择 ORT 1.31.0 与 GenAI 0.18.0；CUDA 12 选择 ORT GPU 1.26.0 与 GenAI CUDA 0.14.1；CUDA 13 选择 ORT GPU 1.31.0 与 GenAI CUDA 0.18.0。GPU 目标机必须具备兼容 CUDA 的硬件、驱动与运行时。
+`Onar.Desktop` 只引用 `Onar.Inference`，并将后端属性传递给推理项目。`InferenceBackend` 接受 `Cpu` 或 `Gpu`，默认值为 `Gpu`；`CudaVersion` 接受 `12` 或 `13`（默认值 `12`，仅 GPU 模式需要）。CPU 选择 ORT 1.31.0 与 GenAI 0.18.0；CUDA 12 选择 ORT GPU 1.26.0 与 GenAI CUDA 0.14.1；CUDA 13 选择 ORT GPU 1.31.0 与 GenAI CUDA 0.18.0。GPU 目标机必须具备兼容 CUDA 的硬件、驱动与运行时。
 
 ### 6.1 通过环境变量配置模型目录
 
@@ -239,7 +239,7 @@ Remove-Item Env:QWEN_MODEL_PATH
 Windows x64 示例：
 
 ```powershell
-dotnet publish Qwen3.Cli\Qwen3.Cli.csproj -c Release -r win-x64 --self-contained false
+dotnet publish Onar.Cli\Onar.Cli.csproj -c Release -r win-x64 --self-contained false
 ```
 
 发布后的模型文件仍需单独部署。检查发布输出中是否包含本机运行所需的 ONNX Runtime 和 Tokenizers 原生依赖；不同发布方式/Runtime ID 下应在目标机器验证。
@@ -249,27 +249,27 @@ dotnet publish Qwen3.Cli\Qwen3.Cli.csproj -c Release -r win-x64 --self-contained
 ### 7.1 基础用法
 
 ```text
-Qwen3.Cli <question> [options]
+Onar.Cli <question> [options]
 ```
 
 查看帮助：
 
 ```powershell
-dotnet run --project Qwen3.Cli -- --help
-dotnet run --project Qwen3.Cli -- -h
-dotnet run --project Qwen3.Cli -- -?
+dotnet run --project Onar.Cli -- --help
+dotnet run --project Onar.Cli -- -h
+dotnet run --project Onar.Cli -- -?
 ```
 
 查询版本：
 
 ```powershell
-dotnet run --project Qwen3.Cli -- --version
+dotnet run --project Onar.Cli -- --version
 ```
 
 单次问答：
 
 ```powershell
-dotnet run --project Qwen3.Cli -- "用简短语言介绍 Qwen3"
+dotnet run --project Onar.Cli -- "用简短语言介绍 Qwen3"
 ```
 
 问题中含空格或特殊字符时请使用引号。PowerShell 中 `--` 用来将选项传给 `dotnet run` 所启动的 CLI。
@@ -277,9 +277,9 @@ dotnet run --project Qwen3.Cli -- "用简短语言介绍 Qwen3"
 ### 7.2 指定场景和 think 模式
 
 ```powershell
-dotnet run --project Qwen3.Cli -- "求解 12 * 13" --scene deep
-dotnet run --project Qwen3.Cli -- "解释什么是 ONNX" --scene fast_qa --think-mode off
-dotnet run --project Qwen3.Cli -- "分析这个设计的优缺点" --scene deep --think-mode on
+dotnet run --project Onar.Cli -- "求解 12 * 13" --scene deep
+dotnet run --project Onar.Cli -- "解释什么是 ONNX" --scene fast_qa --think-mode off
+dotnet run --project Onar.Cli -- "分析这个设计的优缺点" --scene deep --think-mode on
 ```
 
 - 不传 `--scene`：根据问题内容执行启发式场景检测。
@@ -292,7 +292,7 @@ dotnet run --project Qwen3.Cli -- "分析这个设计的优缺点" --scene deep 
 ### 7.3 覆盖生成参数
 
 ```powershell
-dotnet run --project Qwen3.Cli -- "写一段简短介绍" `
+dotnet run --project Onar.Cli -- "写一段简短介绍" `
   --scene chitchat `
   --max-new-tokens 256 `
   --temperature 0.6 `
@@ -307,8 +307,8 @@ dotnet run --project Qwen3.Cli -- "写一段简短介绍" `
 ### 7.4 流式与非流式
 
 ```powershell
-dotnet run --project Qwen3.Cli -- "你好" --stream
-dotnet run --project Qwen3.Cli -- "你好" --no-stream
+dotnet run --project Onar.Cli -- "你好" --stream
+dotnet run --project Onar.Cli -- "你好" --no-stream
 ```
 
 CLI 按场景默认值决定流式方式；命令行显式给出正反选项可覆盖默认值。流式输出写入标准输出，日志写入标准错误。
@@ -318,7 +318,7 @@ CLI 按场景默认值决定流式方式；命令行显式给出正反选项可�
 推理引擎默认将 ONNX Runtime 的 intra-op 线程设为逻辑 CPU 数的一半（至少 1），inter-op 线程设为 1。可根据 CPU、模型量化格式和并发负载显式调整：
 
 ```powershell
-dotnet run --project Qwen3.Cli -- "解释 ONNX Runtime" `
+dotnet run --project Onar.Cli -- "解释 ONNX Runtime" `
   --intra-op-threads 8 `
   --inter-op-threads 1
 ```
@@ -331,7 +331,7 @@ dotnet run --project Qwen3.Cli -- "解释 ONNX Runtime" `
 ### 7.6 日志
 
 ```powershell
-dotnet run --project Qwen3.Cli -- "测试问题" `
+dotnet run --project Onar.Cli -- "测试问题" `
   --log-level debug `
   --log-file ".\logs\inference.jsonl"
 ```
@@ -448,14 +448,14 @@ dotnet run --project Qwen3.Cli -- "测试问题" `
 运行：
 
 ```powershell
-dotnet run --project Qwen3.Console -- "D:\models\Qwen3-0.6B-int8-onnx"
+dotnet run --project Onar.Console -- "D:\models\Qwen3-0.6B-int8-onnx"
 ```
 
 或者先设置 `QWEN_MODEL_PATH` 再运行：
 
 ```powershell
 $env:QWEN_MODEL_PATH = "D:\models\Qwen3-0.6B-int8-onnx"
-dotnet run --project Qwen3.Console
+dotnet run --project Onar.Console
 ```
 
 ### 9.1 内置命令
@@ -499,16 +499,16 @@ scene:roleplay 请你扮演一位科普讲解员
 
 ### 9.4 当前 Console 与 CLI 的职责差别
 
-`Qwen3.Console` 是多轮交互应用，场景使用预设 `GenerationConfig`，主要提供场景前缀和 think 控制。`Qwen3.Cli` 是单次命令行应用，提供本指南第 8 节列出的生成选项。需要对多轮生成细节逐项配置时，应在 C# API 设置 `GenerationConfig`，或使用 CLI 单次请求。
+`Onar.Console` 是多轮交互应用，场景使用预设 `GenerationConfig`，主要提供场景前缀和 think 控制。`Onar.Cli` 是单次命令行应用，提供本指南第 8 节列出的生成选项。需要对多轮生成细节逐项配置时，应在 C# API 设置 `GenerationConfig`，或使用 CLI 单次请求。
 
 ## 10. 核心引擎 C# 集成
 
 ### 10.1 引用类库
 
-在应用项目中添加对 `Qwen3.Inference` 的项目或 NuGet 引用。若直接引用源码工程：
+在应用项目中添加对 `Onar.Inference` 的项目或 NuGet 引用。若直接引用源码工程：
 
 ```powershell
-dotnet add .\MyApp\MyApp.csproj reference .\Qwen3.Inference\Qwen3.Inference.csproj
+dotnet add .\MyApp\MyApp.csproj reference .\Onar.Inference\Onar.Inference.csproj
 ```
 
 部署时还需包含目标平台对应的 Tokenizers 原生运行时，以及 ONNX Runtime 依赖。
@@ -516,7 +516,7 @@ dotnet add .\MyApp\MyApp.csproj reference .\Qwen3.Inference\Qwen3.Inference.cspr
 ### 10.2 最小单次问答
 
 ```csharp
-using Qwen3.Inference;
+using Onar.Inference;
 
 var config = new AssistantConfig
 {
@@ -670,7 +670,7 @@ public interface IInferenceEngine : IDisposable
 ### 11.2 注册新引擎示例
 
 ```csharp
-using Qwen3.Inference;
+using Onar.Inference;
 
 var factory = new InferenceEngineFactory();
 factory.Register("another-engine", config => new AnotherModelEngine(config));
@@ -722,7 +722,7 @@ Console.WriteLine(answer.Answer);
 2. Tokenizers 原生依赖已配置 Windows x64、Linux x64/arm64 和 macOS x64/arm64；仍需在目标系统验证原生库加载。
 3. 引擎默认文件名为 `embedding.int8.onnx` 和 `decoder.int8.onnx`；CLI 未提供独立 ONNX 文件名参数。
 4. decoder 输入输出契约按当前 Qwen3 导出图布局实现，不保证与所有 ONNX 导出器或量化模型兼容。
-5. CLI 是单次请求进程；多轮交互由 `Qwen3.Console` 或类库宿主程序负责。
+5. CLI 是单次请求进程；多轮交互由 `Onar.Console` 或类库宿主程序负责。
 6. 场景检测和事实问题检测采用规则匹配，不属于语义分类。
 7. `ShowThinking` 由 CLI 的文本过滤实现，不控制模型内部生成阶段。
 
@@ -739,28 +739,28 @@ Console.WriteLine(answer.Answer);
 
 ## 14. Avalonia 桌面端
 
-桌面端项目为 `Qwen3.Desktop`，使用 Avalonia 12、CommunityToolkit.Mvvm、SQLite 和所选 CPU/GPU 推理工程。界面包含聊天、模型管理、历史记录、用户中心及管理员账户管理；侧栏可折叠。所有模型推理由统一的 `DesktopChatService` 调用核心 `ChatAssistant`，并根据模型元数据自动选择 ONNX 或 GenAI 引擎。
+桌面端项目为 `Onar.Desktop`，使用 Avalonia 12、CommunityToolkit.Mvvm、SQLite 和所选 CPU/GPU 推理工程。界面包含聊天、模型管理、历史记录、用户中心及管理员账户管理；侧栏可折叠。所有模型推理由统一的 `DesktopChatService` 调用核心 `ChatAssistant`，并根据模型元数据自动选择 ONNX 或 GenAI 引擎。
 
 ### 14.1 启动与构建
 
 ```powershell
-dotnet restore Qwen3Onnx.sln
-dotnet run --project Qwen3.Desktop
+dotnet restore Onar.sln
+dotnet run --project Onar.Desktop
 ```
 
 发布时指定目标平台 RID，例如：
 
 ```powershell
-dotnet publish Qwen3.Desktop/Qwen3.Desktop.csproj -c Release -r win-x64 --self-contained false
-dotnet publish Qwen3.Desktop/Qwen3.Desktop.csproj -c Release -r linux-x64 --self-contained false
-dotnet publish Qwen3.Desktop/Qwen3.Desktop.csproj -c Release -r osx-arm64 --self-contained false
+dotnet publish Onar.Desktop/Onar.Desktop.csproj -c Release -r win-x64 --self-contained false
+dotnet publish Onar.Desktop/Onar.Desktop.csproj -c Release -r linux-x64 --self-contained false
+dotnet publish Onar.Desktop/Onar.Desktop.csproj -c Release -r osx-arm64 --self-contained false
 ```
 
 跨平台发布需要目标机安装 .NET 9 Runtime；若要生成自包含程序，可将 `--self-contained false` 改为 `--self-contained true`。CPU 构建使用 CPU Provider；GPU 构建应指定 `-p:InferenceBackend=Gpu` 并部署兼容 CUDA 的原生依赖。请在目标系统检查原生依赖、文件权限和窗口行为；单个平台构建成功不代表其他平台的运行环境已验证。
 
 ### 14.2 首次启动与数据库
 
-应用在系统用户的本地应用数据目录建立 `Qwen3OnnxDesktop` 文件夹，其中包括 `qwen3-desktop.sqlite3` 数据库、`models` 模型目录和 `logs\desktop.log` 日志文件。具体根目录遵循 .NET `Environment.SpecialFolder.LocalApplicationData`；Windows 通常位于 `%LOCALAPPDATA%\Qwen3OnnxDesktop`。
+应用在系统用户的本地应用数据目录建立 `OnarDesktop` 文件夹，其中包括 `onar-desktop.sqlite3` 数据库、`models` 模型目录和 `logs\desktop.log` 日志文件。具体根目录遵循 .NET `Environment.SpecialFolder.LocalApplicationData`；Windows 通常位于 `%LOCALAPPDATA%\OnarDesktop`。
 
 首次初始化数据库和表结构，并预置拆分式 ONNX 模型及 Qwen、Llama、Phi、DeepSeek GenAI ModelScope 模型条目。既有数据库会自动增加模型引擎类型字段，并为原有模型补上缺失的外部权重 HTTP 链接。若尚无管理员账户，程序创建用户名为 `admin` 的账户，使用密码学安全随机数生成一次性密码，并在启动界面显示。请先妥善保存该密码再关闭提示；密码仅以 PBKDF2-SHA256 哈希和 salt 存储，不会在后续启动时再次显示。当前没有管理员密码重置流程。
 

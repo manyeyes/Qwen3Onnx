@@ -1,0 +1,51 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+		<PropertyGroup>
+				<!-- 基础元信息 -->
+				<AssemblyName>Onar.Console</AssemblyName>
+				<RootNamespace>Onar.Console</RootNamespace>
+				<Title>Onar Console</Title>
+				<Description>Console demo for Qwen3 ONNX inference</Description>
+
+				<OutputType>Exe</OutputType>
+				<TargetFramework>net9.0</TargetFramework>
+				<ImplicitUsings>enable</ImplicitUsings>
+				<Nullable>enable</Nullable>
+
+				<!-- 推理后端 & CUDA 版本预设（默认 Cpu；仅 Gpu 时才给 CudaVersion 兜底） -->
+				<InferenceBackend Condition="'$(InferenceBackend)' == ''">Cpu</InferenceBackend>
+				<CudaVersion Condition="'$(CudaVersion)' == '' and '$(InferenceBackend)' == 'Gpu'">12</CudaVersion>
+		</PropertyGroup>
+
+		<PropertyGroup Condition="'$(InferenceBackend)' == 'Gpu'">
+				<DefineConstants>$(DefineConstants);INFERENCE_BACKEND_GPU</DefineConstants>
+		</PropertyGroup>
+
+		<PropertyGroup Condition="'$(InferenceBackend)' == 'Cpu'">
+				<DefineConstants>$(DefineConstants);INFERENCE_BACKEND_CPU</DefineConstants>
+		</PropertyGroup>
+
+		<ItemGroup>
+				<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+		</ItemGroup>
+
+		<ItemGroup>
+				<ProjectReference Include="..\Onar.Inference\Onar.Inference.csproj" AdditionalProperties="InferenceBackend=$(InferenceBackend);CudaVersion=$(CudaVersion)">
+						<SetProperties>InferenceBackend=$(InferenceBackend);CudaVersion=$(CudaVersion)</SetProperties>
+				</ProjectReference>
+		</ItemGroup>
+
+		<!-- 显式指定两个模型文件夹，目录内所有文件递归复制 -->
+		<ItemGroup> 
+				<None Update="models\Qwen3-0.6B-int4-onnx\**\*">
+						<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+				</None>
+				<None Update="models\Qwen3-0.6B-int8-onnx\**\*">
+						<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+				</None>
+		</ItemGroup>
+
+		<Target Name="ValidateInferenceBackend" BeforeTargets="PrepareForBuild">
+				<Error Condition="'$(InferenceBackend)' != 'Cpu' and '$(InferenceBackend)' != 'Gpu'" Text="InferenceBackend must be either Cpu or Gpu." />
+				<Error Condition="'$(InferenceBackend)' == 'Gpu' and '$(CudaVersion)' != '12' and '$(CudaVersion)' != '13'" Text="CudaVersion must be either 12 or 13 when InferenceBackend=Gpu." />
+		</Target>
+</Project>

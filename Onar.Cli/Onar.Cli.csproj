@@ -1,0 +1,58 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+		<PropertyGroup>
+				<OutputType>Exe</OutputType>
+				<TargetFramework>net9.0</TargetFramework>
+				<ImplicitUsings>enable</ImplicitUsings>
+				<Nullable>enable</Nullable>
+
+				<!-- 基础包元信息 -->
+				<AssemblyName>Onar.Cli</AssemblyName>
+				<RootNamespace>Onar.Cli</RootNamespace>
+				<Title>Onar CLI Inference Tool</Title>
+				<Description>Command-line inference tool for Qwen3 ONNX model, based on Onar.Inference</Description>
+				<Authors>manyeyes and contributors</Authors>
+				<Version>0.3.0</Version>
+				<AssemblyVersion>0.3.0.0</AssemblyVersion>
+				<FileVersion>0.3.0.0</FileVersion>
+				<Copyright>Copyright © manyeyes and contributors 2026</Copyright>
+				<RepositoryUrl>https://github.com/manyeyes/Onar</RepositoryUrl>
+				<RepositoryType>git</RepositoryType>
+
+				<!-- 发布相关优化 -->
+				<PublishSingleFile>false</PublishSingleFile>
+				<SelfContained>false</SelfContained>
+				<TrimMode>partial</TrimMode>
+				<EnableTrim>false</EnableTrim>
+				<UseAppHost>true</UseAppHost>
+				<PublishAot>true</PublishAot>
+
+				<!-- 推理后端 & CUDA 版本预设，与 Onar.Desktop 保持一致 -->
+				<InferenceBackend Condition="'$(InferenceBackend)' == ''">Cpu</InferenceBackend>
+				<CudaVersion Condition="'$(CudaVersion)' == ''">12</CudaVersion>
+		</PropertyGroup>
+
+		<PropertyGroup Condition="'$(InferenceBackend)' == 'Gpu'">
+				<DefineConstants>$(DefineConstants);INFERENCE_BACKEND_GPU</DefineConstants>
+		</PropertyGroup>
+
+		<PropertyGroup Condition="'$(InferenceBackend)' == 'Cpu'">
+				<DefineConstants>$(DefineConstants);INFERENCE_BACKEND_CPU</DefineConstants>
+		</PropertyGroup>
+
+		<ItemGroup>
+				<ProjectReference Include="..\Onar.Inference\Onar.Inference.csproj" AdditionalProperties="InferenceBackend=$(InferenceBackend);CudaVersion=$(CudaVersion)">
+						<SetProperties>InferenceBackend=$(InferenceBackend);CudaVersion=$(CudaVersion)</SetProperties>
+				</ProjectReference>
+		</ItemGroup>
+
+		<ItemGroup>
+				<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+				<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
+				<PackageReference Include="System.CommandLine" Version="2.0.13" />
+		</ItemGroup>
+
+		<Target Name="ValidateInferenceBackend" BeforeTargets="PrepareForBuild">
+				<Error Condition="'$(InferenceBackend)' != 'Cpu' and '$(InferenceBackend)' != 'Gpu'" Text="InferenceBackend must be either Cpu or Gpu." />
+				<Error Condition="'$(InferenceBackend)' == 'Gpu' and '$(CudaVersion)' != '12' and '$(CudaVersion)' != '13'" Text="CudaVersion must be either 12 or 13 when InferenceBackend=Gpu." />
+		</Target>
+</Project>
