@@ -92,6 +92,10 @@ public sealed class SqliteDatabase
     ("Phi-4-mini Instruct INT4 GenAI CPU", "Phi-4-mini-instruct-int4-cpu-genai",
         "Phi-4-mini Instruct ONNX Runtime GenAI model, INT4 quantized for CPU inference.",
         "https://modelscope.cn/models/manyeyes/Phi-4-mini-instruct-int4-cpu-genai", "phi-onnx-genai"),
+    // ---- gemma-3 系列 ---- gemma-3-1b-it-int4-cpu-genai
+    ("Gemma-3-1B-IT INT4 GenAI CPU", "gemma-3-1b-it-int4-cpu-genai",
+     "Gemma-3-1B-IT ONNX Runtime GenAI model, INT4 quantized for CPU inference.",
+     "https://modelscope.cn/models/manyeyes/gemma-3-1b-it-int4-cpu-genai", "gemma-onnx-genai"),
 
     // ==================== GenAI CUDA（仅 GPU 构建） ====================
 #if INFERENCE_BACKEND_GPU
@@ -1348,6 +1352,19 @@ public sealed class SqliteDatabase
             "model.onnx.data",
             "special_tokens_map.json",
             "tokenizer.json",
+            "tokenizer_config.json"
+        },
+
+            "gemma-onnx-genai" => new[]
+            {
+            "added_tokens.json",
+            "chat_template.jinja",
+            "genai_config.json",
+            "model.onnx",
+            "model.onnx.data",
+            "special_tokens_map.json",
+            "tokenizer.json",
+            "tokenizer.model",
             "tokenizer_config.json"
         },
 

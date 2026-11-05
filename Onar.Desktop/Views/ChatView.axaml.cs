@@ -6,18 +6,18 @@ namespace Onar.Desktop.Views;
 
 public sealed partial class ChatView : UserControl
 {
-    // �Ƿ��Զ����浽�ײ����û��ֶ��Ϲ����� false�����صײ���㰴ť���� true��
+    // 是否自动跟随到底部。用户手动上滚后置 false，滚回底部或点按钮后置 true。
     private bool _autoScroll = true;
-    // ��ֹ���򻯹���ʱ�ݹ鴥�� ScrollChanged
+    // 防止程序化滚动时递归触发 ScrollChanged
     private bool _suppressScrollChanged;
-    // ��Ϣ���϶��ģ�����"������Ϣ"ʱǿ�ƹ�����
+    // 消息集合订阅，用于"新增消息"时强制滚到底
     private ChatPageViewModel? _subscribedViewModel;
 
     public ChatView()
     {
         Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this);
         DataContextChanged += OnDataContextChanged;
-        // ������ɺ��ȹ�һ�ε��ײ�
+        // 布局完成后先滚一次到底部
         AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(ScrollToBottomIfAuto, DispatcherPriority.Loaded);
     }
 
@@ -46,7 +46,7 @@ public sealed partial class ChatView : UserControl
             Dispatcher.UIThread.Post(FocusInput, DispatcherPriority.Background);
         }
 
-        // �Ự�л� / ���¼�����Ϣʱ��ǿ�Ƹ��浽��
+        // 会话切换 / 重新加载消息时，强制跟随到底
         if (e.PropertyName == nameof(ChatPageViewModel.Messages))
         {
             if (_subscribedViewModel is not null)
@@ -73,7 +73,7 @@ public sealed partial class ChatView : UserControl
     private void OnMessagesCollectionChanged(
         object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
-        // ������Ϣ�����ͻ��յ��ظ���ʱ��ǿ�ƹ����ײ��ָ��Զ�����
+        // 新增消息（发送或收到回复）时，强制滚到底并恢复自动跟随
         if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add)
         {
             _autoScroll = true;
@@ -90,7 +90,7 @@ public sealed partial class ChatView : UserControl
 
         UpdateScrollState(scrollViewer);
 
-        // ��ʽ���ʱ����������Զ�����״̬������������
+        // 流式输出时，如果处于自动跟随状态，持续滚到底
         if (_autoScroll)
         {
             ScrollToBottom();
@@ -125,8 +125,8 @@ public sealed partial class ChatView : UserControl
         }
         finally
         {
-            // ���򻯹�����ɺ�����ˢ��һ��״̬������ť�ɼ��ԣ���
-            // ��Ϊ ScrollChanged �ѱ����ƣ����������������¡�
+            // 程序化滚动完成后，主动刷新一次状态（含按钮可见性），
+            // 因为 ScrollChanged 已被抑制，不能依赖它来更新。
             Dispatcher.UIThread.Post(
                 () =>
                 {
@@ -142,17 +142,17 @@ public sealed partial class ChatView : UserControl
         var scrollableHeight = scrollViewer.Extent.Height - scrollViewer.Viewport.Height;
         var distanceFromBottom = scrollableHeight - scrollViewer.Offset.Y;
 
-        // ��ײ�С�� 24px ��Ϊ"�ڵײ�"
+        // 距底部小于 24px 视为"在底部"
         var atBottom = distanceFromBottom <= 24;
 
         if (atBottom)
         {
-            // �û����صײ� �� �ָ��Զ�����
+            // 用户滚回底部 → 恢复自动跟随
             _autoScroll = true;
         }
         else
         {
-            // �û��ֶ��Ϲ� �� ֹͣ����
+            // 用户手动上滚 → 停止跟随
             _autoScroll = false;
         }
 
@@ -160,7 +160,7 @@ public sealed partial class ChatView : UserControl
         //{
         //    button.IsVisible = !atBottom;
         //}
-        // ��Ϊ���� Border �Ŀɼ��ԣ�
+        // 改为控制 Border 的可见性：
         if (this.FindControl<Border>("ScrollToBottomBorder") is { } border)
         {
             border.IsVisible = !atBottom;

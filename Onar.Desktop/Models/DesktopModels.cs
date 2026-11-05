@@ -56,6 +56,7 @@ public sealed record ModelDefinition(
         "llama-onnx-genai",
         "phi-onnx-genai",
         "deepseek-onnx-genai",
+        "gemma-onnx-genai",
     };
     public bool RequiresGenAi => GenaiEngineIds.Contains(EngineId);
     public bool IsLlamaGenAi =>
