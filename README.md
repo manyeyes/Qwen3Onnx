@@ -26,7 +26,7 @@
 | 0.6B | [ModelScope](https://modelscope.cn/models/manyeyes/Qwen3-0.6B-int8-onnx) | [ModelScope](https://modelscope.cn/models/manyeyes/Qwen3-0.6B-w4a32-onnx) |
 | 1.7B | [ModelScope](https://modelscope.cn/models/manyeyes/Qwen3-1.7B-int8-onnx) | [ModelScope](https://modelscope.cn/models/manyeyes/Qwen3-1.7B-w4a32-onnx) |
 
-另提供使用 ONNX Runtime GenAI 的 Qwen3、Llama、Phi-4-mini 和 DeepSeek-R1-Distill-Qwen 模型。桌面端内置这些模型并预置逐文件 HTTP 下载地址；拆分 ONNX 模型清单包含 decoder 外部 `.onnx.data` 权重，GenAI 模型清单包含 `chat_template.jinja` 和 `model.onnx.data`，并按 Phi/DeepSeek tokenizer 格式校验其他必需文件。
+另提供使用 ONNX Runtime GenAI 的 Qwen3、Gemma 3、Llama、Phi-4-mini 和 DeepSeek-R1-Distill-Qwen 模型。桌面端内置这些模型并预置逐文件 HTTP 下载地址；拆分 ONNX 模型清单包含 decoder 外部 `.onnx.data` 权重，GenAI 模型清单包含 `chat_template.jinja` 和 `model.onnx.data`，并按各模型 tokenizer 格式校验其他必需文件。
 
 请在 ModelScope 模型页面下载模型文件。下载后的文件组织方式可能随模型仓库版本变化；请确认 tokenizer、`config.json`、embedding ONNX、decoder ONNX 和所需的外部 ONNX 数据文件完整。
 

@@ -53,8 +53,9 @@ Qwen3 的对话使用方式支持思考型与非思考型生成；本项目通�
 | Phi-4-mini-instruct-int4-cpu-genai | https://modelscope.cn/models/manyeyes/Phi-4-mini-instruct-int4-cpu-genai |
 | DeepSeek-R1-Distill-Qwen-1.5B-int4-cpu-genai | https://modelscope.cn/models/manyeyes/DeepSeek-R1-Distill-Qwen-1.5B-int4-cpu-genai |
 | DeepSeek-R1-Distill-Qwen-1.5B-fp16-cuda-genai | https://modelscope.cn/models/manyeyes/DeepSeek-R1-Distill-Qwen-1.5B-fp16-cuda-genai |
+| gemma-3-1b-it-int4-cpu-genai | https://modelscope.cn/models/manyeyes/gemma-3-1b-it-int4-cpu-genai |
 
-前四个模型采用拆分 embedding/decoder ONNX 图；桌面端内置 HTTP 备用清单包含 `decoder.int8.onnx.data` 或 `decoder.int4.onnx.data` 外部权重。Qwen3、Llama、Phi 和 DeepSeek GenAI 模型均使用 ONNX Runtime GenAI，并使用 `chat_template.jinja` 按各自模型定义格式化完整对话。Phi-4-mini 还需要 `added_tokens.json`、`merges.txt`、`special_tokens_map.json` 和 `vocab.json`；DeepSeek R1 Distill Qwen 需要 `special_tokens_map.json`。这些引擎不使用传统的 `config.json`、embedding/decoder 文件名。桌面端根据模型记录的引擎 ID 自动选择对应推理引擎，并按模型仓库所有者生成 HTTP 备用下载地址。
+前四个模型采用拆分 embedding/decoder ONNX 图；桌面端内置 HTTP 备用清单包含 `decoder.int8.onnx.data` 或 `decoder.int4.onnx.data` 外部权重。Qwen3、Gemma、Llama、Phi 和 DeepSeek GenAI 模型均使用 ONNX Runtime GenAI，并使用 `chat_template.jinja` 按各自模型定义格式化完整对话。Gemma 3 还需要 `added_tokens.json`、`special_tokens_map.json` 和 `tokenizer.model`，并以 `<end_of_turn>` 作为对话轮次的停止 token；Phi-4-mini 还需要 `added_tokens.json`、`merges.txt`、`special_tokens_map.json` 和 `vocab.json`；DeepSeek R1 Distill Qwen 需要 `special_tokens_map.json`。这些引擎不使用传统的 `config.json`、embedding/decoder 文件名。桌面端根据模型记录的引擎 ID 自动选择对应推理引擎，并按模型仓库所有者生成 HTTP 备用下载地址。
 
 模型页面的文件、目录结构、许可和更新状态由模型发布者维护。模型权重不包含在本代码仓库内。桌面端预置逐文件 HTTP 备用地址；下载文件较大，请确保磁盘空间、网络和权限充足。使用前需自行确认模型许可证、ModelScope 文件清单及其依赖数据文件。
 
@@ -180,7 +181,7 @@ Onar.Desktop ──────────────────────�
   decoder.int8.onnx
 ```
 
-Qwen3 GenAI 模型由 `OnnxInferenceGenaiEngine` 加载；Phi-4-mini 和 DeepSeek R1 Distill Qwen 分别由 `OnnxInferencePhiGenaiEngine`、`OnnxInferenceDeepSeekGenaiEngine` 加载；Llama 模型由 `OnnxInferenceLlamaGenaiEngine` 加载。上述模板驱动引擎均使用模型目录中的 `chat_template.jinja` 和 GenAI Tokenizer 格式化完整对话。桌面端按模型元数据自动分流；CLI/Console 集成时应设置匹配的 `EngineId`（例如 `phi-onnx-genai`、`deepseek-onnx-genai`）并将 `ModelPath` 指向 GenAI 模型目录。
+Qwen3 GenAI 模型由 `OnnxInferenceGenaiEngine` 加载；Gemma、Phi-4-mini 和 DeepSeek R1 Distill Qwen 分别由 `OnnxInferenceGemmaGenaiEngine`、`OnnxInferencePhiGenaiEngine`、`OnnxInferenceDeepSeekGenaiEngine` 加载；Llama 模型由 `OnnxInferenceLlamaGenaiEngine` 加载。上述模板驱动引擎均使用模型目录中的 `chat_template.jinja` 和 GenAI Tokenizer 格式化完整对话。Gemma 引擎额外识别 `<end_of_turn>` 停止 token。桌面端按模型元数据自动分流；CLI/Console 集成时应设置匹配的 `EngineId`（例如 `gemma-onnx-genai`、`phi-onnx-genai`、`deepseek-onnx-genai`）并将 `ModelPath` 指向 GenAI 模型目录。
 
 如果 ONNX 权重以外部数据文件形式存储，必须连同外部数据文件一起下载，并维持导出图要求的相对路径。外部数据文件一般应与 ONNX 图保持仓库原始相对位置。
 
@@ -762,7 +763,7 @@ dotnet publish Onar.Desktop/Onar.Desktop.csproj -c Release -r osx-arm64 --self-c
 
 应用在系统用户的本地应用数据目录建立 `OnarDesktop` 文件夹，其中包括 `onar-desktop.sqlite3` 数据库、`models` 模型目录和 `logs\desktop.log` 日志文件。具体根目录遵循 .NET `Environment.SpecialFolder.LocalApplicationData`；Windows 通常位于 `%LOCALAPPDATA%\OnarDesktop`。
 
-首次初始化数据库和表结构，并预置拆分式 ONNX 模型及 Qwen、Llama、Phi、DeepSeek GenAI ModelScope 模型条目。既有数据库会自动增加模型引擎类型字段，并为原有模型补上缺失的外部权重 HTTP 链接。若尚无管理员账户，程序创建用户名为 `admin` 的账户，使用密码学安全随机数生成一次性密码，并在启动界面显示。请先妥善保存该密码再关闭提示；密码仅以 PBKDF2-SHA256 哈希和 salt 存储，不会在后续启动时再次显示。当前没有管理员密码重置流程。
+首次初始化数据库和表结构，并预置拆分式 ONNX 模型及 Qwen、Gemma、Llama、Phi、DeepSeek GenAI ModelScope 模型条目。既有数据库会自动增加模型引擎类型字段，并为原有模型补上缺失的外部权重 HTTP 链接。若尚无管理员账户，程序创建用户名为 `admin` 的账户，使用密码学安全随机数生成一次性密码，并在启动界面显示。请先妥善保存该密码再关闭提示；密码仅以 PBKDF2-SHA256 哈希和 salt 存储，不会在后续启动时再次显示。当前没有管理员密码重置流程。
 
 ### 14.3 Chat 与文本附件
 
