@@ -2,20 +2,51 @@ namespace Qwen3.Inference;
 
 public sealed class AssistantConfig
 {
-    public string EngineId { get; init; } = "qwen3-onnx";
+    /// <summary>引擎标识：qwen3-onnx（旧）或 qwen3-onnx-genai（新）。</summary>
+    public string EngineId { get; init; } = "qwen3-onnx-genai";
+
+    /// <summary>
+    /// 模型目录。
+    /// - GenAI 引擎：指向包含 genai_config.json 的目录。
+    /// - 旧 ONNX 引擎：指向包含 embedding/decoder 的目录。
+    /// </summary>
     public string ModelPath { get; init; } =
-        Path.Combine(AppContext.BaseDirectory, "models", "Qwen3-1.7b-int8-onnx");
+        Path.Combine(AppContext.BaseDirectory, "models", "qwen3-4b-genai-int4");
+
+    // ==================== 旧 ONNX 引擎专用（GenAI 引擎忽略） ====================
     public string EmbeddingModelName { get; init; } = "embedding.int8.onnx";
     public string DecoderModelName { get; init; } = "decoder.int8.onnx";
-    public string SystemPrompt { get; init; } = "You are a helpful assistant.";
-    public int MaxSequenceLength { get; init; } = 4096;
     public int IntraOpNumThreads { get; init; } = Math.Max(1, Environment.ProcessorCount / 2);
     public int InterOpNumThreads { get; init; } = 1;
 
+    // ==================== GenAI 引擎专用 ====================
+    /// <summary>GenAI 模型目录，默认与 ModelPath 相同。</summary>
+    public string GenaiModelPath { get; init; } = string.Empty;
+
+    /// <summary>是否启用 CUDA provider。false 时使用 CPU。</summary>
+    public bool UseCuda { get; init; } = false;
+
+    /// <summary>系统提示词，由引擎在拼接 prompt 时使用。</summary>
+    public string SystemPrompt { get; init; } = "You are a helpful assistant.";
+
+    /// <summary>KV Cache 上限，GenAI 内部用于限制生成长度。</summary>
+    public int MaxSequenceLength { get; init; } = 4096;
+
+    // ==================== 派生路径 ====================
+
+    /// <summary>GenAI 实际加载目录：优先 GenaiModelPath，否则回退 ModelPath。</summary>
+    public string ResolvedGenaiModelPath =>
+        string.IsNullOrEmpty(GenaiModelPath) ? ModelPath : GenaiModelPath;
+
+    /// <summary>旧 ONNX 引擎的 tokenizer.json 路径（GenAI 用 model 自带的 tokenizer）。</summary>
     public string TokenizerPath => Path.Combine(ModelPath, "tokenizer.json");
+
     public string EmbeddingModelPath => Path.Combine(ModelPath, EmbeddingModelName);
     public string DecoderModelPath => Path.Combine(ModelPath, DecoderModelName);
     public string ModelConfigPath => Path.Combine(ModelPath, "config.json");
+
+    /// <summary>GenAI 的 genai_config.json 路径，用于启动时快速校验。</summary>
+    public string GenaiConfigPath => Path.Combine(ResolvedGenaiModelPath, "genai_config.json");
 }
 
 public enum Scene

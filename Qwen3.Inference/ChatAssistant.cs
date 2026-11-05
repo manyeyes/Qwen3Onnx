@@ -95,7 +95,16 @@ public class ChatAssistant : IDisposable
 
         var systemPrompt = config.SystemPrompt ?? _config.SystemPrompt;
         string prompt;
-        if (config.MultiTurn)
+        if (_engine is IConversationPromptFormatter conversationFormatter)
+        {
+            _engine.ResetState();
+            prompt = conversationFormatter.FormatConversationPrompt(
+                systemPrompt,
+                config.MultiTurn ? _memory.Turns : Array.Empty<ChatTurn>(),
+                cleanedQuestion,
+                config.ThinkMode);
+        }
+        else if (config.MultiTurn)
         {
             RebuildCacheFromHistory(systemPrompt);
             prompt = _engine.FormatUserPrompt(cleanedQuestion, config.ThinkMode);
@@ -158,6 +167,10 @@ public class ChatAssistant : IDisposable
     private void RebuildCacheFromHistory(string systemPrompt)
     {
         _engine.ResetState();
+        if (_engine is IConversationPromptFormatter)
+        {
+            return;
+        }
         _engine.Prefill(_engine.FormatSystemPrompt(systemPrompt));
         var historyPrompt = _engine.FormatHistoryPrompt(_memory.Turns);
         if (historyPrompt.Length > 0)

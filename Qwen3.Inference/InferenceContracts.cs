@@ -21,6 +21,15 @@ public interface IInferenceEngine : IDisposable
         CancellationToken cancellationToken = default);
 }
 
+public interface IConversationPromptFormatter
+{
+    string FormatConversationPrompt(
+        string systemPrompt,
+        IReadOnlyList<ChatTurn> history,
+        string question,
+        bool thinkMode);
+}
+
 public interface IInferenceEngineFactory
 {
     IInferenceEngine Create(AssistantConfig config);
@@ -37,6 +46,14 @@ public sealed class InferenceEngineFactory : IInferenceEngineFactory
         _loggerFactory = loggerFactory;
         Register("qwen3-onnx", config => new OnnxInferenceEngine(
             config, _loggerFactory?.CreateLogger<OnnxInferenceEngine>()));
+        Register("qwen3-onnx-genai", config => new OnnxInferenceGenaiEngine(
+            config, _loggerFactory?.CreateLogger<OnnxInferenceGenaiEngine>()));
+        Register("llama-onnx-genai", config => new OnnxInferenceLlamaGenaiEngine(
+            config, _loggerFactory?.CreateLogger<OnnxInferenceLlamaGenaiEngine>()));
+        Register("phi-onnx-genai", config => new OnnxInferencePhiGenaiEngine(
+            config, _loggerFactory?.CreateLogger<OnnxInferencePhiGenaiEngine>()));
+        Register("deepseek-onnx-genai", config => new OnnxInferenceDeepSeekGenaiEngine(
+            config, _loggerFactory?.CreateLogger<OnnxInferenceDeepSeekGenaiEngine>()));
     }
 
     public void Register(string engineId, Func<AssistantConfig, IInferenceEngine> factory)
