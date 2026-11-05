@@ -1,8 +1,24 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 
 namespace Qwen3.Cli;
+
+/// <summary>日志条目的 AOT 友好 DTO（替代匿名类型）。</summary>
+internal sealed record JsonLogEntry(
+    DateTimeOffset TimestampUtc,
+    string Level,
+    string Category,
+    int EventId,
+    string Message,
+    string? Exception);
+
+[JsonSourceGenerationOptions(WriteIndented = false)]
+[JsonSerializable(typeof(JsonLogEntry))]
+internal partial class JsonFileLoggerJsonContext : JsonSerializerContext
+{
+}
 
 internal sealed class JsonFileLoggerProvider : ILoggerProvider
 {
@@ -42,19 +58,17 @@ internal sealed class JsonFileLoggerProvider : ILoggerProvider
         Exception? exception,
         Func<TState, Exception?, string> formatter)
     {
-        var entry = new
-        {
-            TimestampUtc = DateTimeOffset.UtcNow,
-            Level = logLevel.ToString(),
-            Category = category,
-            EventId = eventId.Id,
-            Message = formatter(state, exception),
-            Exception = exception?.ToString()
-        };
+        var entry = new JsonLogEntry(
+            TimestampUtc: DateTimeOffset.UtcNow,
+            Level: logLevel.ToString(),
+            Category: category,
+            EventId: eventId.Id,
+            Message: formatter(state, exception),
+            Exception: exception?.ToString());
 
         lock (_syncRoot)
         {
-            _writer.WriteLine(JsonSerializer.Serialize(entry));
+            _writer.WriteLine(JsonSerializer.Serialize(entry, JsonFileLoggerJsonContext.Default.JsonLogEntry));
         }
     }
 
