@@ -52,9 +52,10 @@
         <Border Grid.Row="0" Background="Transparent" BorderThickness="0" Padding="12">
           <StackPanel Spacing="7">
 
-            <!-- 标题 + ☰：叠加布局，展开时标题左 / 按钮右，收起时按钮居中 -->
+            <!-- 标题 + ☰：叠加布局，展开时标题左 / 按钮右，收起时按钮居中 FontWeight="Bold" Foreground="#175CD3"-->
             <Grid Margin="4,6,4,12">
-              <TextBlock Text="Onar" FontSize="21" FontWeight="Bold" Foreground="#175CD3"
+              <TextBlock Text="Onar" FontSize="16" 
+                         FontWeight="Bold" FontFamily="NotoSerifSC" LetterSpacing="1"
                          HorizontalAlignment="Left" VerticalAlignment="Center"
                          IsVisible="{Binding IsSidebarExpanded}"/>
               <Button Command="{Binding ToggleSidebarCommand}"
@@ -63,16 +64,16 @@
                       Padding="8,5" Background="Transparent" BorderThickness="0"
                       Foreground="#344054">
                 <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Menu}"
-                                            Width="20" Height="20"/>
+                                            Width="18" Height="18"/>
               </Button>
             </Grid>
 
-            <!-- 新对话 -->
+            <!-- 新对话 Foreground="#175CD3" BorderBrush="#B2DDFF"-->
             <Button Command="{Binding NewConversationCommand}"
                     Classes="nav-button"
                     Classes.nav-collapsed="{Binding !IsSidebarExpanded}"
                     Padding="12,10"
-                    Background="#EFF8FF" Foreground="#175CD3" BorderBrush="#B2DDFF">
+                    Background="#EFF8FF" >
               <StackPanel Orientation="Horizontal" Spacing="9">
                 <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Plus}"
                                             Width="18" Height="18"/>
@@ -130,7 +131,7 @@
                                     Background="Transparent" BorderThickness="0"
                                     Foreground="#667085" ToolTip.Tip="对话操作">
                               <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.DotsHorizontal}"
-                                                          Width="18" Height="18"/>
+                                                          Width="13" Height="13"/>
                               <Button.Flyout>
                                 <MenuFlyout Placement="Bottom">
                                   <MenuItem Header="{Binding PinMenuText}"

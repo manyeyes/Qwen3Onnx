@@ -18,7 +18,8 @@ public abstract class OnnxInferenceChatTemplateGenaiEngine : IInferenceEngine, I
     protected OnnxInferenceChatTemplateGenaiEngine(
         AssistantConfig config,
         string engineId,
-        ILogger? logger)
+        ILogger? logger,
+        IReadOnlyList<string>? additionalStopTokens = null)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
         EngineId = engineId;
@@ -64,6 +65,13 @@ public abstract class OnnxInferenceChatTemplateGenaiEngine : IInferenceEngine, I
         _model = new Model(genaiConfig);
         _tokenizer = new Tokenizer(_model);
         LoadStopTokenIds(modelPath);
+        if (additionalStopTokens is not null)
+        {
+            foreach (var stopToken in additionalStopTokens)
+            {
+                AddStopToken(stopToken);
+            }
+        }
     }
 
     public string EngineId { get; }
@@ -96,6 +104,9 @@ public abstract class OnnxInferenceChatTemplateGenaiEngine : IInferenceEngine, I
         _ = config;
         return text;
     }
+
+    /// <summary>对 tokenizer 流式解码出的单个文本片段做归一化。</summary>
+    protected virtual string NormalizeDecodedChunk(string text) => text;
 
     // ======================= Prompt 格式化 =======================
 
@@ -245,7 +256,7 @@ public abstract class OnnxInferenceChatTemplateGenaiEngine : IInferenceEngine, I
 
             var tokenId = checked((int)outputTokens[^1]);
             tokenIds.Add(tokenId);
-            var decoded = tokenizerStream.Decode(tokenId);
+            var decoded = NormalizeDecodedChunk(tokenizerStream.Decode(tokenId));
             if (_stopTokenIds.Contains(tokenId))
             {
                 stopReason = $"遇到停止 token ({tokenId})";
@@ -390,6 +401,26 @@ public abstract class OnnxInferenceChatTemplateGenaiEngine : IInferenceEngine, I
         {
             _stopTokenIds.Add(checked((int)encoded[0][0]));
         }
+    }
+
+    private void AddStopToken(string token)
+    {
+        using var encoded = _tokenizer.Encode(token);
+        if (encoded.NumSequences == 1 && encoded[0].Length == 1)
+        {
+            _stopTokenIds.Add(checked((int)encoded[0][0]));
+            _logger?.LogInformation(
+                "{EngineId} additional stop token {Token} resolved to ID {TokenId}.",
+                EngineId,
+                token,
+                encoded[0][0]);
+            return;
+        }
+
+        _logger?.LogWarning(
+            "{EngineId} additional stop token {Token} did not encode as one token and will not be used.",
+            EngineId,
+            token);
     }
 
     private static bool HasRepeatedTokenPattern(
