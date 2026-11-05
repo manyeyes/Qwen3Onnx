@@ -23,7 +23,7 @@
 
 ## 1. 项目简介
 
-本项目将 Qwen3 本地 ONNX 推理封装为四个 .NET 工程：
+本项目将 Qwen3 本地 ONNX 推理封装为多个职责清晰的 .NET 工程：
 
 | 工程 | 类型 | 职责 |
 | --- | --- | --- |
@@ -32,7 +32,7 @@
 | `Qwen3.Console` | 控制台应用 | 面向人工交互的多轮聊天体验、场景和思考模式命令 |
 | `Qwen3.Desktop` | Avalonia 桌面应用 | MVVM 聊天界面、模型管理、SQLite 历史和本地账户 |
 
-解决方案文件为 `Qwen3Onnx.sln`。所有应用依赖 `Qwen3.Inference`，模型会在 assistant 创建时加载，在进程内复用；一次 CLI 进程处理一个请求，交互式 Console 进程可持续处理多轮输入。
+解决方案文件为 `Qwen3Onnx.sln`。CLI、Console 和桌面端都使用同一个 `Qwen3.Inference` 工程。桌面端将后端属性传递给推理项目，以选择对应 ONNX Runtime 包；模型会在 assistant 创建时加载，在进程内复用；一次 CLI 进程处理一个请求，交互式 Console 进程可持续处理多轮输入。
 
 ## 2. Qwen3 模型简介
 
@@ -48,8 +48,15 @@ Qwen3 的对话使用方式支持思考型与非思考型生成；本项目通�
 | Qwen3-0.6B-w4a32-onnx | https://modelscope.cn/models/manyeyes/Qwen3-0.6B-w4a32-onnx |
 | Qwen3-1.7B-int8-onnx | https://modelscope.cn/models/manyeyes/Qwen3-1.7B-int8-onnx |
 | Qwen3-1.7B-w4a32-onnx | https://modelscope.cn/models/manyeyes/Qwen3-1.7B-w4a32-onnx |
+| Qwen3-4B-int4-genai | https://modelscope.cn/models/manyeyes/Qwen3-4B-int4-genai |
+| Llama-3.2-1B-Instruct-int4-cpu-genai | https://modelscope.cn/models/onnx-community/Llama-3.2-1B-Instruct-int4-cpu-genai |
+| Phi-4-mini-instruct-int4-cpu-genai | https://modelscope.cn/models/manyeyes/Phi-4-mini-instruct-int4-cpu-genai |
+| DeepSeek-R1-Distill-Qwen-1.5B-int4-cpu-genai | https://modelscope.cn/models/manyeyes/DeepSeek-R1-Distill-Qwen-1.5B-int4-cpu-genai |
+| DeepSeek-R1-Distill-Qwen-1.5B-fp16-cuda-genai | https://modelscope.cn/models/manyeyes/DeepSeek-R1-Distill-Qwen-1.5B-fp16-cuda-genai |
 
-模型页面的文件、目录结构、许可和更新状态由模型发布者维护。模型权重不包含在本代码仓库内，也不会由程序自动下载。使用前需自行确认模型许可证、ModelScope 文件清单及其依赖数据文件。
+前四个模型采用拆分 embedding/decoder ONNX 图；桌面端内置 HTTP 备用清单包含 `decoder.int8.onnx.data` 或 `decoder.int4.onnx.data` 外部权重。Qwen3、Llama、Phi 和 DeepSeek GenAI 模型均使用 ONNX Runtime GenAI，并使用 `chat_template.jinja` 按各自模型定义格式化完整对话。Phi-4-mini 还需要 `added_tokens.json`、`merges.txt`、`special_tokens_map.json` 和 `vocab.json`；DeepSeek R1 Distill Qwen 需要 `special_tokens_map.json`。这些引擎不使用传统的 `config.json`、embedding/decoder 文件名。桌面端根据模型记录的引擎 ID 自动选择对应推理引擎，并按模型仓库所有者生成 HTTP 备用下载地址。
+
+模型页面的文件、目录结构、许可和更新状态由模型发布者维护。模型权重不包含在本代码仓库内。桌面端预置逐文件 HTTP 备用地址；下载文件较大，请确保磁盘空间、网络和权限充足。使用前需自行确认模型许可证、ModelScope 文件清单及其依赖数据文件。
 
 ### 2.1 思考模式与项目控制
 
@@ -69,7 +76,7 @@ INT8/W4A32 是模型仓库发布名称中的量化方案标识；应以对应仓
 
 1. 仓库提供的 embedding / decoder 图和所需 tokenizer、config 文件完整。
 2. 输入输出名称、顺序、形状、类型和 KV Cache 行为符合当前引擎实现。
-3. ONNX Runtime 1.23.2 支持模型图中的算子与量化表示。
+3. ONNX Runtime 及其原生依赖支持模型图中的算子与量化表示。
 4. 如果文件名不同，通过 C# `AssistantConfig` 设置 `EmbeddingModelName` 与 `DecoderModelName`；当前 CLI 尚无对应文件名参数。
 
 不能仅凭模型仓库名称判断它一定能被当前引擎无修改加载。若图契约不同，应新增引擎实现，而不是只修改文件名。
@@ -79,10 +86,13 @@ INT8/W4A32 是模型仓库发布名称中的量化方案标识；应以对应仓
 ```text
 Qwen3.Cli ───────┐
                  ├── ChatAssistant ── IInferenceEngineFactory ── IInferenceEngine
-Qwen3.Console ───┘                                         └── OnnxInferenceEngine
+Qwen3.Console ───┘                                         ├── OnnxInferenceEngine
+Qwen3.Desktop ─────────────────────────────────────────────└── OnnxInferenceGenaiEngine
                                                               ├── Tokenizers.DotNet
                                                               └── ONNX Runtime
 ```
+
+`Qwen3.Desktop` 根据模型元数据中的 `EngineId` 选择 ONNX 或 GenAI 引擎；桌面构建属性 `InferenceBackend` 与 `CudaVersion` 决定 `Qwen3.Inference` 所引用的 ONNX Runtime / GenAI NuGet 包。推理源代码和命名空间维持单份，避免 CPU/GPU 项目重复维护同一套实现。
 
 ### 3.1 应用层
 
@@ -118,9 +128,10 @@ Qwen3.Console ───┘                                         └── Onn
 
 ### 4.1 开发环境
 
-- .NET 8 SDK
-- Windows、Linux 或 macOS（各平台需要对应的 .NET 8 Runtime）
+- .NET 9 SDK
+- Windows、Linux 或 macOS（各平台需要对应的 .NET 9 Runtime）
 - 能读取模型仓库所提供 ONNX 图的 CPU 环境
+- CUDA 构建还需要兼容的 NVIDIA GPU 驱动及 ONNX Runtime CUDA/GenAI 原生运行时
 
 ### 4.2 NuGet 依赖
 
@@ -128,6 +139,9 @@ Qwen3.Console ───┘                                         └── Onn
 | --- | --- | --- |
 | `System.CommandLine` | 2.0.13 | CLI 参数、帮助、解析与选项校验 |
 | `Microsoft.ML.OnnxRuntime` | 1.31.0 | ONNX 模型执行 |
+| `Microsoft.ML.OnnxRuntimeGenAI` | 0.18.0 | CPU 版 GenAI 模型执行 |
+| `Microsoft.ML.OnnxRuntime.Gpu` | CUDA 12: 1.26.0；CUDA 13: 1.31.0 | GPU ONNX Runtime CUDA 执行 |
+| `Microsoft.ML.OnnxRuntimeGenAI.Cuda` | CUDA 12: 0.14.1；CUDA 13: 0.18.0 | GPU GenAI CUDA 执行 |
 | `Tokenizers.DotNet` | 1.4.1 | 载入 Hugging Face `tokenizer.json` 并执行编码/解码 |
 | `Tokenizers.DotNet.runtime.*` | 1.4.1 | Windows x64、Linux x64/arm64、macOS x64/arm64 Tokenizer 原生运行时 |
 | `Microsoft.Extensions.Logging.Abstractions` | 9.0.0 | 推理类库日志抽象 |
@@ -136,7 +150,7 @@ Qwen3.Console ───┘                                         └── Onn
 | `CommunityToolkit.Mvvm` | 8.4.2 | MVVM ObservableObject 与命令生成 |
 | `Microsoft.Data.Sqlite` | 9.0.0 | 本地会话、账户、模型目录及用量数据库 |
 
-当前引擎使用 ONNX Runtime CPU Execution Provider。GPU Provider 尚未由该实现配置。
+桌面 GPU 后端默认 CUDA 12；CUDA 13 需显式指定。CPU/GPU 构建使用不同 NuGet 包版本；部署时必须按目标环境验证原生依赖、驱动与 CUDA 兼容性。GPU 构建仅验证托管代码可编译，不代表当前机器已成功创建 CUDA Session。
 
 ## 5. 下载模型与准备文件
 
@@ -148,12 +162,15 @@ Qwen3.Console ───┘                                         └── Onn
 - [Qwen3-0.6B-w4a32-onnx](https://modelscope.cn/models/manyeyes/Qwen3-0.6B-w4a32-onnx)
 - [Qwen3-1.7B-int8-onnx](https://modelscope.cn/models/manyeyes/Qwen3-1.7B-int8-onnx)
 - [Qwen3-1.7B-w4a32-onnx](https://modelscope.cn/models/manyeyes/Qwen3-1.7B-w4a32-onnx)
+- [Qwen3-4B-int4-genai](https://modelscope.cn/models/manyeyes/Qwen3-4B-int4-genai)
 
 在 ModelScope 页面下载仓库文件到本地。模型规模和量化方式对内存/吞吐/质量的影响取决于具体导出文件、硬件和 Runtime，不在此对资源占用作固定承诺。
 
+桌面端的模型管理页面已内置以上五个仓库，并为其提供 Git 克隆与 HTTP 文件直链备用。4 个拆分 ONNX 模型的 HTTP 清单均包含 decoder 外部数据文件：INT8 使用 `decoder.int8.onnx.data`，W4A32 使用 `decoder.int4.onnx.data`。4B GenAI 清单包含 `model.onnx.data`，下载时必须与 `model.onnx` 保持仓库中的相对位置。
+
 ### 5.2 目录约定
 
-当前 `OnnxInferenceEngine` 默认读取：
+拆分 ONNX `OnnxInferenceEngine` 默认读取：
 
 ```text
 <模型目录>\
@@ -162,6 +179,8 @@ Qwen3.Console ───┘                                         └── Onn
   embedding.int8.onnx
   decoder.int8.onnx
 ```
+
+Qwen3 GenAI 模型由 `OnnxInferenceGenaiEngine` 加载；Phi-4-mini 和 DeepSeek R1 Distill Qwen 分别由 `OnnxInferencePhiGenaiEngine`、`OnnxInferenceDeepSeekGenaiEngine` 加载；Llama 模型由 `OnnxInferenceLlamaGenaiEngine` 加载。上述模板驱动引擎均使用模型目录中的 `chat_template.jinja` 和 GenAI Tokenizer 格式化完整对话。桌面端按模型元数据自动分流；CLI/Console 集成时应设置匹配的 `EngineId`（例如 `phi-onnx-genai`、`deepseek-onnx-genai`）并将 `ModelPath` 指向 GenAI 模型目录。
 
 如果 ONNX 权重以外部数据文件形式存储，必须连同外部数据文件一起下载，并维持导出图要求的相对路径。外部数据文件一般应与 ONNX 图保持仓库原始相对位置。
 
@@ -175,7 +194,7 @@ D:\models\Qwen3-0.6B-int8-onnx\
 
 ### 5.3 模型文件校验
 
-`Qwen3.Console` 启动时会检查 tokenizer、config 和默认 embedding/decoder 文件是否存在，并列出缺少的路径。CLI 会在构造 ONNX 引擎时报告缺失文件。文件存在不代表 ONNX 图兼容；引擎初始化还会校验模型参数及 decoder 输入输出契约。
+`Qwen3.Console` 启动时会检查 tokenizer、config 和默认 embedding/decoder 文件是否存在，并列出缺少的路径。拆分 ONNX 文件存在不代表图结构兼容；引擎初始化还会校验模型参数及 decoder 输入输出契约。GenAI 模型则须确保 `genai_config.json`、模型图及外部数据文件完整。
 
 ## 6. 构建与运行
 
@@ -185,6 +204,21 @@ D:\models\Qwen3-0.6B-int8-onnx\
 dotnet restore Qwen3Onnx.sln
 dotnet build Qwen3Onnx.sln
 ```
+
+桌面端默认构建 GPU 后端（CUDA 12）。CPU 后端构建：
+
+```powershell
+dotnet build Qwen3.Desktop\Qwen3.Desktop.csproj -p:InferenceBackend=Cpu
+```
+
+选择 CUDA 12 或 CUDA 13 后端：
+
+```powershell
+dotnet build Qwen3.Desktop\Qwen3.Desktop.csproj -p:InferenceBackend=Gpu -p:CudaVersion=12
+dotnet build Qwen3.Desktop\Qwen3.Desktop.csproj -p:InferenceBackend=Gpu -p:CudaVersion=13
+```
+
+`Qwen3.Desktop` 只引用 `Qwen3.Inference`，并将后端属性传递给推理项目。`InferenceBackend` 接受 `Cpu` 或 `Gpu`，默认值为 `Gpu`；`CudaVersion` 接受 `12` 或 `13`（默认值 `12`，仅 GPU 模式需要）。CPU 选择 ORT 1.31.0 与 GenAI 0.18.0；CUDA 12 选择 ORT GPU 1.26.0 与 GenAI CUDA 0.14.1；CUDA 13 选择 ORT GPU 1.31.0 与 GenAI CUDA 0.18.0。GPU 目标机必须具备兼容 CUDA 的硬件、驱动与运行时。
 
 ### 6.1 通过环境变量配置模型目录
 
@@ -658,7 +692,7 @@ Console.WriteLine(answer.Answer);
 
 ### 11.3 工厂扩展说明
 
-当前 `InferenceEngineFactory` 在构造时注册内置 `qwen3-onnx`。调用 `Register` 增加其他 ID；重复 ID 会抛出异常。CLI 目前创建默认 factory，因此新增引擎只有在 CLI 注册代码中加入相应 factory 后，`--engine <id>` 才可使用。自定义宿主程序可传入自己配置好的 factory。
+当前 `InferenceEngineFactory` 注册 `qwen3-onnx`、`qwen3-onnx-genai`、`llama-onnx-genai`、`phi-onnx-genai` 与 `deepseek-onnx-genai`。桌面模型目录将引擎 ID 与模型文件清单一并保存；新增格式时需要为对应 CPU/GPU 工程注册引擎实现，并为下载、安装校验和 UI 元数据增加模型格式支持。CLI 目前通过 `--engine <id>` 选择推理工厂中的引擎；GenAI 引擎仍需使用有效的 GenAI 模型目录。自定义宿主程序可传入自己配置好的 factory。
 
 ## 12. 日志、错误和排障
 
@@ -684,7 +718,7 @@ Console.WriteLine(answer.Answer);
 
 当前实现的已知边界：
 
-1. ONNX Runtime 使用 CPU Provider。
+1. 桌面端默认使用 CPU Provider；配置 `InferenceBackend=Gpu` 时使用 GPU 推理工程及 CUDA Provider。CLI/Console 当前默认使用 CPU 推理工程。
 2. Tokenizers 原生依赖已配置 Windows x64、Linux x64/arm64 和 macOS x64/arm64；仍需在目标系统验证原生库加载。
 3. 引擎默认文件名为 `embedding.int8.onnx` 和 `decoder.int8.onnx`；CLI 未提供独立 ONNX 文件名参数。
 4. decoder 输入输出契约按当前 Qwen3 导出图布局实现，不保证与所有 ONNX 导出器或量化模型兼容。
@@ -705,7 +739,7 @@ Console.WriteLine(answer.Answer);
 
 ## 14. Avalonia 桌面端
 
-桌面端项目为 `Qwen3.Desktop`，使用 Avalonia 12、CommunityToolkit.Mvvm、SQLite 和 `Qwen3.Inference`。界面包含聊天、模型管理、历史记录、用户中心及管理员账户管理；侧栏可折叠。所有模型推理由统一的 `DesktopChatService` 调用核心 `ChatAssistant`，不会另建一套推理实现。
+桌面端项目为 `Qwen3.Desktop`，使用 Avalonia 12、CommunityToolkit.Mvvm、SQLite 和所选 CPU/GPU 推理工程。界面包含聊天、模型管理、历史记录、用户中心及管理员账户管理；侧栏可折叠。所有模型推理由统一的 `DesktopChatService` 调用核心 `ChatAssistant`，并根据模型元数据自动选择 ONNX 或 GenAI 引擎。
 
 ### 14.1 启动与构建
 
@@ -722,13 +756,13 @@ dotnet publish Qwen3.Desktop/Qwen3.Desktop.csproj -c Release -r linux-x64 --self
 dotnet publish Qwen3.Desktop/Qwen3.Desktop.csproj -c Release -r osx-arm64 --self-contained false
 ```
 
-跨平台发布需要目标机安装 .NET 8 Runtime；若要生成自包含程序，可将 `--self-contained false` 改为 `--self-contained true`。ONNX Runtime 当前使用 CPU Provider。请在目标系统检查原生依赖、文件权限和窗口行为；单个平台构建成功不代表其他平台的运行环境已验证。
+跨平台发布需要目标机安装 .NET 9 Runtime；若要生成自包含程序，可将 `--self-contained false` 改为 `--self-contained true`。CPU 构建使用 CPU Provider；GPU 构建应指定 `-p:InferenceBackend=Gpu` 并部署兼容 CUDA 的原生依赖。请在目标系统检查原生依赖、文件权限和窗口行为；单个平台构建成功不代表其他平台的运行环境已验证。
 
 ### 14.2 首次启动与数据库
 
 应用在系统用户的本地应用数据目录建立 `Qwen3OnnxDesktop` 文件夹，其中包括 `qwen3-desktop.sqlite3` 数据库、`models` 模型目录和 `logs\desktop.log` 日志文件。具体根目录遵循 .NET `Environment.SpecialFolder.LocalApplicationData`；Windows 通常位于 `%LOCALAPPDATA%\Qwen3OnnxDesktop`。
 
-首次初始化数据库和表结构，并预置用户提供的四个 ModelScope 模型条目。若尚无管理员账户，程序创建用户名为 `admin` 的账户，使用密码学安全随机数生成一次性密码，并在启动界面显示。请先妥善保存该密码再关闭提示；密码仅以 PBKDF2-SHA256 哈希和 salt 存储，不会在后续启动时再次显示。当前没有管理员密码重置流程。
+首次初始化数据库和表结构，并预置拆分式 ONNX 模型及 Qwen、Llama、Phi、DeepSeek GenAI ModelScope 模型条目。既有数据库会自动增加模型引擎类型字段，并为原有模型补上缺失的外部权重 HTTP 链接。若尚无管理员账户，程序创建用户名为 `admin` 的账户，使用密码学安全随机数生成一次性密码，并在启动界面显示。请先妥善保存该密码再关闭提示；密码仅以 PBKDF2-SHA256 哈希和 salt 存储，不会在后续启动时再次显示。当前没有管理员密码重置流程。
 
 ### 14.3 Chat 与文本附件
 
@@ -759,7 +793,7 @@ decoder.int8.onnx | https://host.example/model/decoder.int8.onnx
 
 相对路径保持模型仓库内的目录结构；必需模型文件应包含 `config.json`、`tokenizer.json`、`embedding*.onnx` 和 `decoder*.onnx`。下载优先尝试 Git 浅克隆；Git 不存在、克隆失败、关键文件缺失、已配置的 HTTP 文件缺失或 Git LFS 权重仅得到指针时，会保留已克隆的完整文件，并使用登记的逐文件 HTTP 链接补齐。如果未登记这些链接，内置 ModelScope 模型会继续使用 ModelScope 文件清单 API 下载。HTTP 下载会校验安全相对路径、可用的文件大小和 SHA-256；必需文件校验通过后才发布模型目录。发布目录后会尽力清理 `.git` 元数据；若操作系统拒绝删除 Git pack 文件，模型仍会安装成功，`.git` 会留在模型目录中并在状态中提示。下载或校验失败时，临时 `.partial` 目录会保留并在状态提示中显示其路径，便于排查；再次开始下载会使用新的临时目录，不会自动续传旧目录。
 
-四个内置 ModelScope 模型都已预填逐文件 HTTP 后备链接，Git 不可用或克隆未取得完整权重时会直接下载这些文件。W4A32 模型的 decoder 使用 `decoder.int4.onnx` 图及独立的 `decoder.int4.onnx.data` 权重文件；两个文件都包含在默认清单中，不能只下载 ONNX 图。HTTP 下载完成后仍需在目标系统检查外部权重文件完整，并确保其与 ONNX 图位于同一模型目录。
+所有内置 ModelScope 模型都已预填逐文件 HTTP 后备链接，Git 不可用或克隆未取得完整权重时会直接下载这些文件。拆分式 ONNX 模型的 decoder 图依赖对应的 `decoder.int8.onnx.data` 或 `decoder.int4.onnx.data`；GenAI 模型使用 `model.onnx.data`。这些外部数据均在默认清单中，必须与对应图文件一起完整下载。桌面端会按模型引擎校验所需的不同文件集合；模型安装后仍建议检查磁盘空间、权限和模型发布者说明。
 
 模型列表提供编辑与删除。添加或编辑会在遮罩弹窗中完成，删除前会显示确认弹窗。已安装模型或已被对话引用的模型不能更改英文名称（避免本地路径/历史关联失效）；被历史对话引用的模型不能删除。
 
