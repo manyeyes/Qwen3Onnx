@@ -54,6 +54,8 @@ public sealed class InferenceEngineFactory : IInferenceEngineFactory
             config, _loggerFactory?.CreateLogger<OnnxInferencePhiGenaiEngine>()));
         Register("deepseek-onnx-genai", config => new OnnxInferenceDeepSeekGenaiEngine(
             config, _loggerFactory?.CreateLogger<OnnxInferenceDeepSeekGenaiEngine>()));
+        Register("gemma-onnx-genai", config => new OnnxInferenceGemmaGenaiEngine(
+            config, _loggerFactory?.CreateLogger<OnnxInferenceGemmaGenaiEngine>()));
     }
 
     public void Register(string engineId, Func<AssistantConfig, IInferenceEngine> factory)
