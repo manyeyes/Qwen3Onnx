@@ -9,9 +9,9 @@
 				<Title>Onar Inference</Title>
 				<Description>Qwen3 ONNX inference core library based on OnnxRuntime and Tokenizers.DotNet</Description>
 				<Authors>manyeyes and contributors</Authors>
-				<Version>0.3.0</Version>
-				<AssemblyVersion>0.3.0.0</AssemblyVersion>
-				<FileVersion>0.3.0.0</FileVersion>
+				<Version>0.4.0</Version>
+				<AssemblyVersion>0.4.0.0</AssemblyVersion>
+				<FileVersion>0.4.0.0</FileVersion>
 				<Copyright>Copyright © manyeyes and contributors 2026</Copyright>
 				<RepositoryUrl>https://github.com/manyeyes/Onar</RepositoryUrl>
 				<RepositoryType>git</RepositoryType>
@@ -27,18 +27,6 @@
 		<PropertyGroup Condition="'$(InferenceBackend)' == 'Gpu'">
 				<DefineConstants>$(DefineConstants);INFERENCE_BACKEND_GPU</DefineConstants>
 		</PropertyGroup>
-		<ItemGroup>
-		  <Compile Remove="OnnxInferenceChatTemplateGenaiEngine - 复制%282%29.cs" />
-		  <Compile Remove="OnnxInferenceChatTemplateGenaiEngine - 复制.cs" />
-		  <Compile Remove="OnnxInferenceDeepSeekGenaiEngine - 复制.cs" />
-		  <Compile Remove="OnnxInferenceEngine - 复制%282%29.cs" />
-		  <Compile Remove="OnnxInferenceEngine - 复制.cs" />
-		  <Compile Remove="OnnxInferenceGenaiEngine - 复制.cs" />
-		  <Compile Remove="OnnxInferenceLlamaGenaiEngine - 复制%282%29.cs" />
-		  <Compile Remove="OnnxInferenceLlamaGenaiEngine - 复制%283%29.cs" />
-		  <Compile Remove="OnnxInferenceLlamaGenaiEngine - 复制%284%29.cs" />
-		  <Compile Remove="OnnxInferenceLlamaGenaiEngine - 复制.cs" />
-		</ItemGroup>
 
 		<ItemGroup>
 				<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
