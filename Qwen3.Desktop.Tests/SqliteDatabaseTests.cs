@@ -180,6 +180,23 @@ public sealed class SqliteDatabaseTests
     }
 
     [TestMethod]
+    public void ThinkContinuationWithoutOpeningTagIsNotMistakenForThinking()
+    {
+        var parsed = MessageViewModel.ParseStreamingContent(
+            "先分析问题\n</think>\n最终答案");
+        var message = new MessageViewModel
+        {
+            Role = "assistant",
+            Content = "先分析问题\n</think>\n最终答案"
+        };
+
+        Assert.AreEqual(string.Empty, parsed.Thinking);
+        Assert.AreEqual("先分析问题\n</think>\n最终答案", parsed.Answer);
+        Assert.AreEqual(string.Empty, message.ThinkingContent);
+        Assert.IsFalse(message.HasThinking);
+    }
+
+    [TestMethod]
     public void StreamingContentParserHandlesThinkMarkersSplitAcrossChunks()
     {
         var parser = new MessageViewModel.StreamingContentParser();
@@ -190,6 +207,28 @@ public sealed class SqliteDatabaseTests
 
         Assert.AreEqual("分析中", result.Thinking);
         Assert.AreEqual("答案", result.Answer);
+    }
+
+    [TestMethod]
+    public void ThinkTagStringsInsideAnswerRemainOrdinaryText()
+    {
+        const string output = "Use <think> and </think> as literal template tokens in this example.";
+        var parsed = MessageViewModel.ParseStreamingContent(output);
+        var parser = new MessageViewModel.StreamingContentParser();
+        parser.Append("Use <think> and ");
+        var streamed = parser.Append("</think> as literal template tokens in this example.");
+        var message = new MessageViewModel
+        {
+            Role = "assistant",
+            Content = output
+        };
+
+        Assert.AreEqual(string.Empty, parsed.Thinking);
+        Assert.AreEqual(output, parsed.Answer);
+        Assert.AreEqual(string.Empty, streamed.Thinking);
+        Assert.AreEqual(output, streamed.Answer);
+        Assert.IsFalse(message.HasThinking);
+        Assert.AreEqual(output, message.MarkdownContent);
     }
 
     [TestMethod]
@@ -286,7 +325,8 @@ public sealed class SqliteDatabaseTests
         var conversationId = await _database.SaveTurnAsync(
             null, null, model.Id, "Interrupted turn", true,
             "question in progress", [], 4, "partial answer", 2,
-            _cancellationToken, wasInterrupted: true);
+            _cancellationToken, wasInterrupted: true,
+            generationTimeSeconds: 1.25, stopReason: "用户停止生成");
 
         var messages = await _database.GetMessagesAsync(
             conversationId, null, _cancellationToken);
@@ -294,6 +334,28 @@ public sealed class SqliteDatabaseTests
         Assert.IsFalse(messages[0].WasInterrupted);
         Assert.IsTrue(messages[1].WasInterrupted);
         Assert.AreEqual("partial answer", messages[1].Content);
+        Assert.AreEqual(1.25, messages[1].GenerationTimeSeconds, 0.001);
+        Assert.AreEqual("用户停止生成", messages[1].StopReason);
+    }
+
+    [TestMethod]
+    public async Task MessagesCanBeDeletedOnlyByTheirConversationOwner()
+    {
+        var userId = await _database.CreateUserAsync(
+            "delete-message-user", "secure-password-123", _cancellationToken);
+        var model = (await _database.GetModelsAsync(_cancellationToken))[0];
+        var conversationId = await SaveTurnAsync(userId, model.Id, "delete");
+        var messages = await _database.GetMessagesAsync(conversationId, userId, _cancellationToken);
+
+        await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(() =>
+            _database.DeleteMessageAsync(
+                conversationId, messages[0].Id, null, _cancellationToken));
+        await _database.DeleteMessageAsync(
+            conversationId, messages[0].Id, userId, _cancellationToken);
+
+        var remaining = await _database.GetMessagesAsync(conversationId, userId, _cancellationToken);
+        Assert.AreEqual(1, remaining.Count);
+        Assert.AreEqual(messages[1].Id, remaining[0].Id);
     }
 
     [TestMethod]
@@ -308,13 +370,15 @@ public sealed class SqliteDatabaseTests
 
         await _database.ReplaceAssistantReplyAsync(
             conversationId, userId, assistantMessage.Id, "replacement answer", 5, 8,
-            _cancellationToken);
+            _cancellationToken, generationTimeSeconds: 2.5, stopReason: "达到最大生成长度");
 
         var updated = await _database.GetMessagesAsync(conversationId, userId, _cancellationToken);
         Assert.AreEqual(2, updated.Count);
         Assert.AreEqual(assistantMessage.Id, updated[1].Id);
         Assert.AreEqual("replacement answer", updated[1].Content);
         Assert.AreEqual(8, updated[1].TokenCount);
+        Assert.AreEqual(2.5, updated[1].GenerationTimeSeconds, 0.001);
+        Assert.AreEqual("达到最大生成长度", updated[1].StopReason);
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
             _database.ReplaceAssistantReplyAsync(
                 conversationId, null, assistantMessage.Id, "unauthorized", 1, 1,
@@ -336,6 +400,29 @@ public sealed class SqliteDatabaseTests
         Assert.AreEqual(112, message.ThinkingMaxHeight);
         message.IsThinkingExpanded = true;
         Assert.AreEqual(240, message.ThinkingMaxHeight);
+    }
+
+    [TestMethod]
+    public void MessageViewModelKeepsThinkingVisibleAfterGenerationCompletes()
+    {
+        var message = new MessageViewModel
+        {
+            Role = "assistant",
+            IsPending = true
+        };
+        var changedProperties = new HashSet<string?>();
+        message.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
+        message.ApplyStreamingSnapshot("reasoning", "answer");
+        message.Content = "<think>reasoning</think>answer";
+
+        message.IsPending = false;
+
+        Assert.AreEqual("reasoning", message.ThinkingContent);
+        Assert.IsTrue(message.HasThinking);
+        Assert.AreEqual("answer", message.MarkdownContent);
+        Assert.IsTrue(changedProperties.Contains(nameof(MessageViewModel.ThinkingContent)));
+        Assert.IsTrue(changedProperties.Contains(nameof(MessageViewModel.HasThinking)));
+        Assert.IsTrue(changedProperties.Contains(nameof(MessageViewModel.MarkdownContent)));
     }
 
     [TestMethod]
@@ -429,8 +516,10 @@ public sealed class SqliteDatabaseTests
         using var services = new DesktopServices(_temporaryDirectory);
         await services.Database.InitializeAsync(_cancellationToken);
         var models = await services.Database.GetModelsAsync(_cancellationToken);
-        var model = models[0];
-        var alternativeModel = models[1];
+        var standardModels = models.Where(item => !item.RequiresGenAi).Take(2).ToArray();
+        Assert.AreEqual(2, standardModels.Length);
+        var model = standardModels[0];
+        var alternativeModel = standardModels[1];
         foreach (var installedModel in new[] { model, alternativeModel })
         {
             Directory.CreateDirectory(installedModel.LocalPath);
@@ -516,22 +605,53 @@ public sealed class SqliteDatabaseTests
     public async Task BuiltInModelsHaveCompleteModelScopeHttpFallbacks()
     {
         var models = await _database.GetModelsAsync(_cancellationToken);
-        Assert.AreEqual(4, models.Count);
+        Assert.IsTrue(models.Count >= 8);
 
         foreach (var model in models)
         {
+            if (model.RequiresGenAi)
+            {
+                var genAiFiles = model.EngineId switch
+                {
+                    "phi-onnx-genai" => new HashSet<string>(
+                        ["added_tokens.json", "chat_template.jinja", "genai_config.json",
+                            "merges.txt", "model.onnx", "model.onnx.data", "special_tokens_map.json",
+                            "tokenizer.json", "tokenizer_config.json", "vocab.json"],
+                        StringComparer.OrdinalIgnoreCase),
+                    "deepseek-onnx-genai" => new HashSet<string>(
+                        ["chat_template.jinja", "genai_config.json", "model.onnx",
+                            "model.onnx.data", "special_tokens_map.json", "tokenizer.json",
+                            "tokenizer_config.json"],
+                        StringComparer.OrdinalIgnoreCase),
+                    _ => new HashSet<string>(
+                        ["chat_template.jinja", "genai_config.json", "model.onnx",
+                            "model.onnx.data", "tokenizer.json", "tokenizer_config.json"],
+                        StringComparer.OrdinalIgnoreCase)
+                };
+                Assert.IsTrue(
+                    model.EngineId is "qwen3-onnx-genai" or "llama-onnx-genai" or
+                        "phi-onnx-genai" or "deepseek-onnx-genai");
+                Assert.IsTrue(genAiFiles.SetEquals(model.HttpFileLinks.Select(file => file.Path)));
+                foreach (var file in model.HttpFileLinks)
+                {
+                    Assert.AreEqual(
+                        $"{model.RepositoryUrl}/resolve/master/{file.Path}?view=false",
+                        file.Url);
+                }
+                continue;
+            }
+
             var expectedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "config.json", "tokenizer.json", "embedding.int8.onnx",
                 model.EnglishName.Contains("w4a32", StringComparison.OrdinalIgnoreCase)
                     ? "decoder.int4.onnx"
                     : "decoder.int8.onnx",
-                "vocab.json"
+                "vocab.json",
+                model.EnglishName.Contains("w4a32", StringComparison.OrdinalIgnoreCase)
+                    ? "decoder.int4.onnx.data"
+                    : "decoder.int8.onnx.data"
             };
-            if (model.EnglishName.Contains("w4a32", StringComparison.OrdinalIgnoreCase))
-            {
-                expectedFiles.Add("decoder.int4.onnx.data");
-            }
 
             Assert.IsTrue(expectedFiles.SetEquals(model.HttpFileLinks.Select(file => file.Path)));
             foreach (var file in model.HttpFileLinks)
@@ -541,6 +661,75 @@ public sealed class SqliteDatabaseTests
                     file.Url);
             }
         }
+    }
+
+    [TestMethod]
+    public async Task ExistingLlamaHttpFallbacksAreUpdatedToTheRepositoryOwner()
+    {
+        var llama = (await _database.GetModelsAsync(_cancellationToken))
+            .Single(model => model.IsLlamaGenAi &&
+                model.EnglishName.Contains("1B", StringComparison.OrdinalIgnoreCase));
+        var staleLinks = llama.HttpFileLinks.Select(link => link with
+        {
+            Url = link.Url.Replace("onnx-community", "manyeyes", StringComparison.Ordinal)
+        }).ToArray();
+
+        await using (var connection = new SqliteConnection($"Data Source={_database.DatabasePath}"))
+        {
+            await connection.OpenAsync(_cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                "UPDATE models SET direct_downloads_json = $links WHERE id = $id;";
+            command.Parameters.AddWithValue("$links", System.Text.Json.JsonSerializer.Serialize(staleLinks));
+            command.Parameters.AddWithValue("$id", llama.Id);
+            await command.ExecuteNonQueryAsync(_cancellationToken);
+        }
+
+        await _database.InitializeAsync(_cancellationToken);
+        var refreshed = (await _database.GetModelsAsync(_cancellationToken))
+            .Single(model => model.Id == llama.Id);
+
+        Assert.IsTrue(refreshed.HttpFileLinks.All(file =>
+            file.Url.StartsWith(
+                $"{refreshed.RepositoryUrl}/resolve/master/",
+                StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task ExistingModelCatalogGetsInferenceEngineColumnMigration()
+    {
+    var legacyDirectory = Path.Combine(_temporaryDirectory, "legacy-engine-db");
+    Directory.CreateDirectory(legacyDirectory);
+    var legacyPath = Path.Combine(legacyDirectory, "qwen3-desktop.sqlite3");
+    await using (var connection = new SqliteConnection($"Data Source={legacyPath}"))
+    {
+        await connection.OpenAsync(_cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE models (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                english_name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                repository_url TEXT NOT NULL,
+                local_path TEXT NOT NULL,
+                is_installed INTEGER NOT NULL DEFAULT 0,
+                embedding_file_name TEXT NOT NULL DEFAULT 'embedding.int8.onnx',
+                decoder_file_name TEXT NOT NULL DEFAULT 'decoder.int8.onnx',
+                required_files_json TEXT NOT NULL DEFAULT '[]',
+                direct_downloads_json TEXT NOT NULL DEFAULT '[]',
+                created_utc TEXT NOT NULL
+            );
+            """;
+        await command.ExecuteNonQueryAsync(_cancellationToken);
+    }
+
+    var legacyDatabase = new SqliteDatabase(legacyDirectory);
+    await legacyDatabase.InitializeAsync(_cancellationToken);
+    var upgradedModels = await legacyDatabase.GetModelsAsync(_cancellationToken);
+    Assert.IsTrue(upgradedModels.Count >= 8);
+    Assert.IsTrue(upgradedModels.Any(model =>
+        model.EngineId == "qwen3-onnx-genai" && model.RequiresGenAi));
     }
 
     [TestMethod]
@@ -646,6 +835,118 @@ public sealed class SqliteDatabaseTests
     }
 
     [TestMethod]
+    public async Task DownloaderInstallsGenAiModelUsingItsDistinctFileManifest()
+    {
+        var fileNames = new[]
+        {
+            "chat_template.jinja",
+            "genai_config.json",
+            "model.onnx",
+            "model.onnx.data",
+            "tokenizer.json",
+            "tokenizer_config.json"
+        };
+        var payloads = fileNames.ToDictionary(
+            fileName => $"https://cdn.example/genai/{fileName}",
+            fileName => System.Text.Encoding.UTF8.GetBytes(fileName),
+            StringComparer.Ordinal);
+        var links = fileNames.Select(fileName =>
+            new ModelFileLink(fileName, $"https://cdn.example/genai/{fileName}")).ToArray();
+        using var httpClient = new HttpClient(new InMemoryDownloadHandler(payloads));
+        var downloader = new ModelDownloadService(httpClient);
+        var destination = Path.Combine(_temporaryDirectory, "downloaded-genai-model");
+        var model = new ModelDefinition(
+            "genai-http", "GenAI", "GenAI", "Test GenAI file fallback",
+            string.Empty, destination, false, string.Empty, string.Empty, [], links, "qwen3-onnx-genai");
+
+        var downloaded = await downloader.DownloadAsync(model, cancellationToken: _cancellationToken);
+
+        Assert.IsTrue(downloaded.Model.IsInstalled);
+        Assert.IsTrue(downloaded.Model.RequiresGenAi);
+        Assert.AreEqual(string.Empty, downloaded.Model.EmbeddingFileName);
+        Assert.AreEqual(string.Empty, downloaded.Model.DecoderFileName);
+        Assert.IsTrue(new HashSet<string>(fileNames, StringComparer.OrdinalIgnoreCase)
+            .SetEquals(downloaded.Model.RequiredFiles));
+        Assert.IsTrue(ModelDownloadService.IsInstalled(downloaded.Model));
+    }
+
+    [TestMethod]
+    public async Task DownloaderInstallsLlamaWithJinjaTemplate()
+    {
+        var files = new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            ["genai_config.json"] = "{}"u8.ToArray(),
+            ["model.onnx"] = [1],
+            ["model.onnx.data"] = [2],
+            ["tokenizer.json"] = "{}"u8.ToArray(),
+            ["chat_template.jinja"] = System.Text.Encoding.UTF8.GetBytes(
+                "{{ bos_token }}{% for message in messages %}{{ message['content'] }}{% endfor %}"),
+            ["tokenizer_config.json"] =
+                """{"backend":"tokenizers","bos_token":"<|begin_of_text|>","clean_up_tokenization_spaces":true,"eos_token":"<|end_of_text|>","is_local":true,"model_input_names":["input_ids","attention_mask"],"model_max_length":131072,"tokenizer_class":"TokenizersBackend"}"""u8.ToArray()
+        };
+        var links = files.Select(pair =>
+            new ModelFileLink(pair.Key, $"https://cdn.example/llama/{pair.Key}")).ToArray();
+        var payloads = links.ToDictionary(
+            link => link.Url, link => files[link.Path], StringComparer.Ordinal);
+        using var httpClient = new HttpClient(new InMemoryDownloadHandler(payloads));
+        var downloader = new ModelDownloadService(httpClient);
+        var destination = Path.Combine(_temporaryDirectory, "downloaded-llama-model");
+        var model = new ModelDefinition(
+            "llama-http", "Llama", "Llama", "Test Llama GenAI file fallback",
+            string.Empty, destination, false, string.Empty, string.Empty, [], links, "llama-onnx-genai");
+
+        var downloaded = await downloader.DownloadAsync(model, cancellationToken: _cancellationToken);
+
+        Assert.IsTrue(downloaded.Model.IsInstalled);
+        Assert.IsTrue(downloaded.Model.IsLlamaGenAi);
+        Assert.IsTrue(downloaded.Model.RequiredFiles.Contains("chat_template.jinja"));
+        Assert.IsTrue(ModelDownloadService.IsInstalled(downloaded.Model));
+    }
+
+    [TestMethod]
+    public async Task DownloaderInstallsPhiAndDeepSeekGenAiManifests()
+    {
+        var manifests = new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            ["phi-onnx-genai"] =
+            [
+                "added_tokens.json", "chat_template.jinja", "genai_config.json", "merges.txt",
+                "model.onnx", "model.onnx.data", "special_tokens_map.json", "tokenizer.json",
+                "tokenizer_config.json", "vocab.json"
+            ],
+            ["deepseek-onnx-genai"] =
+            [
+                "chat_template.jinja", "genai_config.json", "model.onnx", "model.onnx.data",
+                "special_tokens_map.json", "tokenizer.json", "tokenizer_config.json"
+            ]
+        };
+
+        foreach (var (engineId, fileNames) in manifests)
+        {
+            var payloads = fileNames.ToDictionary(
+                fileName => $"https://cdn.example/{engineId}/{fileName}",
+                fileName => System.Text.Encoding.UTF8.GetBytes(fileName),
+                StringComparer.Ordinal);
+            var links = fileNames.Select(fileName =>
+                new ModelFileLink(fileName, $"https://cdn.example/{engineId}/{fileName}")).ToArray();
+            using var httpClient = new HttpClient(new InMemoryDownloadHandler(payloads));
+            var downloader = new ModelDownloadService(httpClient);
+            var destination = Path.Combine(_temporaryDirectory, engineId);
+            var model = new ModelDefinition(
+                engineId, engineId, engineId, $"Test {engineId} download",
+                string.Empty, destination, false, string.Empty, string.Empty, [], links, engineId);
+
+            var downloaded = await downloader.DownloadAsync(model, cancellationToken: _cancellationToken);
+
+            Assert.IsTrue(downloaded.Model.IsInstalled);
+            Assert.IsTrue(downloaded.Model.RequiresGenAi);
+            Assert.IsTrue(ModelDownloadService.IsInstalled(downloaded.Model));
+            Assert.IsTrue(new HashSet<string>(fileNames, StringComparer.OrdinalIgnoreCase)
+                .SetEquals(downloaded.Model.RequiredFiles));
+        }
+    }
+
+    [TestMethod]
     public async Task DownloaderPreservesPartialFilesWhenHttpFallbackFails()
     {
         var config = """{"model_type":"qwen3"}"""u8.ToArray();
@@ -708,12 +1009,13 @@ public sealed class SqliteDatabaseTests
         var legacyDatabase = new SqliteDatabase(legacyDirectory);
         await legacyDatabase.InitializeAsync(_cancellationToken);
         var models = await legacyDatabase.GetModelsAsync(_cancellationToken);
-        Assert.AreEqual(4, models.Count);
-        Assert.IsTrue(models.All(model => model.HttpFileLinks.Count >= 5));
+        Assert.IsTrue(models.Count >= 8);
+        Assert.IsTrue(models.All(model =>
+            model.HttpFileLinks.Count >= (model.RequiresGenAi && model.IsLlamaGenAi ? 5 : 6)));
     }
 
     [TestMethod]
-    public async Task ExistingMessageTableGetsInterruptedStateMigration()
+    public async Task ExistingMessageTableGetsGenerationMetadataMigrations()
     {
         var legacyDirectory = Path.Combine(_temporaryDirectory, "legacy-message-db");
         Directory.CreateDirectory(legacyDirectory);
@@ -744,11 +1046,17 @@ public sealed class SqliteDatabaseTests
         columns.CommandText = "PRAGMA table_info(messages);";
         await using var reader = await columns.ExecuteReaderAsync(_cancellationToken);
         var hasInterruptedColumn = false;
+        var hasGenerationTimeColumn = false;
+        var hasStopReasonColumn = false;
         while (await reader.ReadAsync(_cancellationToken))
         {
             hasInterruptedColumn |= reader.GetString(1) == "was_interrupted";
+            hasGenerationTimeColumn |= reader.GetString(1) == "generation_time_seconds";
+            hasStopReasonColumn |= reader.GetString(1) == "stop_reason";
         }
         Assert.IsTrue(hasInterruptedColumn);
+        Assert.IsTrue(hasGenerationTimeColumn);
+        Assert.IsTrue(hasStopReasonColumn);
     }
 
     [TestMethod]
