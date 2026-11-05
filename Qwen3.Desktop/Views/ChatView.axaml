@@ -1,28 +1,23 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:md="using:Markdown.Avalonia"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:icons="clr-namespace:Material.Icons;assembly=Material.Icons"
+             xmlns:conv="clr-namespace:Qwen3.Desktop.Converters"
              x:Class="Qwen3.Desktop.Views.ChatView"
              x:CompileBindings="False">
   <Grid RowDefinitions="Auto,*" Background="#FFFFFF">
-    <!-- 顶部栏：白底，无分割线 -->
+    <!-- 顶部栏 -->
     <Border Padding="26,18" Background="White">
-      <Grid ColumnDefinitions="*,Auto">
+      <Grid ColumnDefinitions="*">
         <StackPanel>
           <TextBlock Text="{Binding ConversationTitle}" FontSize="21" FontWeight="SemiBold" Foreground="#101828"/>
-          <TextBlock Text="{Binding StatusText}" Margin="0,5,0,0" Foreground="#667085" TextWrapping="Wrap"/>
         </StackPanel>
-        <ComboBox Grid.Column="1" Width="250" ItemsSource="{Binding InstalledModels}"
-                  SelectedItem="{Binding SelectedModel}" PlaceholderText="选择已安装模型"
-                  IsEnabled="{Binding CanChangeConversation}">
-          <ComboBox.ItemTemplate>
-            <DataTemplate><TextBlock Text="{Binding Title}"/></DataTemplate>
-          </ComboBox.ItemTemplate>
-        </ComboBox>
       </Grid>
     </Border>
 
     <Grid Grid.Row="1" RowDefinitions="*,Auto">
-      <!-- ========== 消息区：ScrollViewer + 悬浮滚到底按钮 ========== -->
+      <!-- ========== 消息区 ========== -->
       <Grid>
         <ScrollViewer x:Name="MessageScrollViewer"
                       VerticalScrollBarVisibility="Auto"
@@ -39,7 +34,6 @@
                                 MaxWidth="{Binding BubbleMaxWidth}"
                                 HorizontalAlignment="{Binding BubbleAlignment}"
                                 Margin="{Binding BubbleMargin}">
-                      <!-- 消息容器 -->
                       <Border CornerRadius="14"
                               Padding="{Binding BubblePadding}"
                               Background="{Binding BubbleBackground}"
@@ -91,37 +85,66 @@
                                      IsVisible="{Binding HasAttachments}"/>
                         </StackPanel>
                       </Border>
-                      <!-- 消息操作按钮 -->
                       <StackPanel Orientation="Horizontal" Spacing="2"
                                   HorizontalAlignment="{Binding BubbleAlignment}">
-                        <Button Content="⧉" ToolTip.Tip="复制消息"
+                        <Button ToolTip.Tip="复制消息"
                                 Command="{Binding $parent[UserControl].DataContext.CopyMessageCommand}"
-                                CommandParameter="{Binding}" Padding="8,4" FontSize="15"
-                                Background="Transparent" BorderThickness="0" Foreground="#667085"/>
-                        <Button Content="{Binding SelectionModeGlyph}"
-                                ToolTip.Tip="{Binding SelectionModeTooltip}"
+                                CommandParameter="{Binding}" Padding="7,4" Width="30" Height="30"
+                                Background="Transparent" BorderThickness="0" Foreground="#667085">
+                          <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.ContentCopy}"
+                                                      Width="16" Height="16"/>
+                        </Button>
+                        <Button ToolTip.Tip="{Binding GenerationStatsTooltip}"
+                                IsVisible="{Binding HasGenerationStats}"
+                                Padding="7,4" Width="30" Height="30"
+                                Background="Transparent" BorderThickness="0" Foreground="#667085">
+                          <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.InformationOutline}"
+                                                      Width="16" Height="16"/>
+                        </Button>
+                        <Button ToolTip.Tip="删除消息"
+                                Command="{Binding $parent[UserControl].DataContext.DeleteMessageCommand}"
+                                CommandParameter="{Binding}" IsVisible="{Binding CanDelete}"
+                                IsEnabled="{Binding $parent[UserControl].DataContext.CanChangeConversation}"
+                                Padding="7,4" Width="30" Height="30" Background="Transparent"
+                                BorderThickness="0" Foreground="#667085">
+                          <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.DeleteOutline}"
+                                                      Width="16" Height="16"/>
+                        </Button>
+                        <Button ToolTip.Tip="{Binding SelectionModeTooltip}"
                                 Command="{Binding ToggleTextSelectionModeCommand}"
-                                IsVisible="{Binding IsAssistant}" Padding="8,4" FontSize="15"
-                                Background="Transparent" BorderThickness="0" Foreground="#667085"/>
-                        <Button Content="↗" ToolTip.Tip="重新发送"
+                                IsVisible="{Binding IsAssistant}" Padding="7,4" Width="30" Height="30"
+                                Background="Transparent" BorderThickness="0" Foreground="#667085">
+                          <Grid>
+                            <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.TextBoxOutline}"
+                                                        Width="16" Height="16" IsVisible="{Binding !IsTextSelectionMode}"/>
+                            <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.LanguageMarkdown}"
+                                                        Width="16" Height="16" IsVisible="{Binding IsTextSelectionMode}"/>
+                          </Grid>
+                        </Button>
+                        <Button ToolTip.Tip="重新发送"
                                 Command="{Binding $parent[UserControl].DataContext.ResendMessageCommand}"
                                 CommandParameter="{Binding}" IsVisible="{Binding IsUser}"
                                 IsEnabled="{Binding $parent[UserControl].DataContext.CanChangeConversation}"
-                                Padding="8,4" FontSize="15" Background="Transparent"
-                                BorderThickness="0" Foreground="#667085"/>
-                        <Button Content="↻" ToolTip.Tip="重新生成回复"
+                                Padding="7,4" Width="30" Height="30" Background="Transparent"
+                                BorderThickness="0" Foreground="#667085">
+                          <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.SendOutline}"
+                                                      Width="16" Height="16"/>
+                        </Button>
+                        <Button ToolTip.Tip="重新生成回复"
                                 Command="{Binding $parent[UserControl].DataContext.RegenerateReplyCommand}"
                                 CommandParameter="{Binding}" IsVisible="{Binding CanRegenerate}"
                                 IsEnabled="{Binding $parent[UserControl].DataContext.CanChangeConversation}"
-                                Padding="8,4" FontSize="15" Background="Transparent"
-                                BorderThickness="0" Foreground="#667085"/>
+                                Padding="7,4" Width="30" Height="30" Background="Transparent"
+                                BorderThickness="0" Foreground="#667085">
+                          <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Refresh}"
+                                                      Width="16" Height="16"/>
+                        </Button>
                       </StackPanel>
                     </StackPanel>
                   </Grid>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <!-- 空状态提示 -->
             <StackPanel IsVisible="{Binding HasNoMessages}" HorizontalAlignment="Center"
                         VerticalAlignment="Center" Spacing="8" Margin="24">
               <TextBlock Text="开始一段新对话" FontSize="22" FontWeight="SemiBold"
@@ -132,7 +155,6 @@
           </Grid>
         </ScrollViewer>
 
-        <!-- 悬浮"滚动到底部"按钮：Border 包裹提供 BoxShadow，Button 提供点击 -->
         <Border x:Name="ScrollToBottomBorder"
                 IsVisible="False"
                 HorizontalAlignment="Center" VerticalAlignment="Bottom"
@@ -148,71 +170,136 @@
                   Foreground="#667085" FontSize="16"
                   ToolTip.Tip="滚动到底部"
                   Click="ScrollToBottomButton_OnClick">
-            ↓
+            <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.ChevronDown}"
+                                        Width="18" Height="18"/>
           </Button>
         </Border>
       </Grid>
-      <!-- ========== 消息区结束 ========== -->
 
-      <!-- 输入区：白底，无顶部分割线 -->
-      <Border Grid.Row="1" Padding="22,16,22,20" Background="White" BorderThickness="0">
-        <StackPanel Spacing="10">
-          <StackPanel Spacing="6">
+            <!-- ========== 输入区：TextBox 填满 Border，边框与 Border 重合 ========== -->
+      <!-- 附件区浮顶、工具栏浮底，TextBox 的 Padding.Top 动态跟随附件区高度，避免遮挡 -->
+      <Border Grid.Row="1" Margin="22,10,22,12"
+              Background="White" BorderBrush="#D0D5DD" BorderThickness="1"
+              CornerRadius="13" ClipToBounds="True">
+        <Grid>
+
+          <!-- TextBox：填满整个 Border 区域；边框与 Border 完全重合 -->
+          <!-- Padding.Top 绑定 AttachmentOverlay.Bounds.Height 经转换器计算 -->
+          <TextBox Name="InputTextBox"
+                   Text="{Binding InputText}" AcceptsReturn="True" TextWrapping="Wrap"
+                   MinHeight="88" MaxHeight="220" IsEnabled="{Binding CanChangeConversation}"
+                   PlaceholderText="输入消息…（支持文本与源码附件）"
+                   Padding="{Binding #AttachmentOverlay.Bounds.Height,
+                                     Converter={x:Static conv:AttachmentHeightToPaddingConverter.Instance}}"
+                   Background="Transparent" CornerRadius="12"
+                   BorderBrush="Transparent" BorderThickness="0"
+                   VerticalContentAlignment="Top">
+            <TextBox.KeyBindings>
+              <KeyBinding Gesture="Enter" Command="{Binding SendFromKeyboardCommand}" />
+            </TextBox.KeyBindings>
+          </TextBox>
+
+          <!-- 附件区：浮在 TextBox 顶部；无附件时高度为 0，TextBox 顶部 Padding 恢复 10 -->
+          <StackPanel Name="AttachmentOverlay"
+                      VerticalAlignment="Top"
+                      Margin="10,8,10,10"
+                      Spacing="4">
             <ItemsControl ItemsSource="{Binding AttachmentNames}">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
               </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Border Margin="0,0,8,0" Padding="9,5" Background="#F2F4F7" CornerRadius="8">
-                    <StackPanel Orientation="Horizontal" Spacing="7">
-                      <TextBlock Text="{Binding}" Foreground="#344054"/>
-                      <Button Content="×"
+                  <Border Margin="0,0,8,4" Padding="7,4" Background="#F2F4F7" CornerRadius="8">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                      <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Paperclip}"
+                                                  Width="12" Height="12" Foreground="#667085"
+                                                  VerticalAlignment="Center"/>
+                      <TextBlock Text="{Binding}" Foreground="#344054" FontSize="12"
+                                 VerticalAlignment="Center"/>
+                      <Button ToolTip.Tip="移除附件"
                               Command="{Binding $parent[Window].DataContext.Chat.RemoveAttachmentCommand}"
-                              CommandParameter="{Binding}" Padding="4,0"/>
+                              CommandParameter="{Binding}" Padding="0" Width="18" Height="18"
+                              Background="Transparent" BorderThickness="0"
+                              VerticalAlignment="Center">
+                        <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Close}"
+                                                    Width="12" Height="12"/>
+                      </Button>
                     </StackPanel>
                   </Border>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <TextBlock Text="{Binding AttachmentHint}"
-                       FontSize="12" Foreground="#B42318"
-                       TextWrapping="Wrap"
-                       IsVisible="{Binding HasAttachmentHint}"/>
+
+            <TextBlock Text="{Binding AttachmentHint}" FontSize="12" Foreground="#B42318"
+                       TextWrapping="Wrap" IsVisible="{Binding HasAttachmentHint}"/>
           </StackPanel>
-          <Grid>
-            <TextBox Text="{Binding InputText}" AcceptsReturn="True" TextWrapping="Wrap"
-                     MinHeight="95" MaxHeight="210" IsEnabled="{Binding CanChangeConversation}"
-                     PlaceholderText="输入消息…（支持文本与源码附件）"
-                     Padding="10,10,10,26"
-                     Background="White" BorderBrush="#D0D5DD" BorderThickness="1">
-              <TextBox.KeyBindings>
-                <KeyBinding Gesture="Enter" Command="{Binding SendFromKeyboardCommand}" />
-              </TextBox.KeyBindings>
-            </TextBox>
-            <TextBlock Text="Enter 发送 · Shift+Enter 换行"
-                       FontSize="11" Foreground="#98A2B3"
-                       HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                       Margin="0,0,12,8"
-                       IsHitTestVisible="False"/>
+
+          <!-- 输入提示：浮在工具栏上方右下 -->
+          <TextBlock Text="Enter 发送 · Shift+Enter 换行"
+                     FontSize="10" Foreground="#98A2B3"
+                     HorizontalAlignment="Right" VerticalAlignment="Top"
+                     Margin="0,10,16,40"
+                     IsHitTestVisible="False"/>
+
+          <!-- 工具栏：浮在 TextBox 底部，始终贴底 -->
+          <Grid VerticalAlignment="Bottom" Margin="10,0,10,8"
+                ColumnDefinitions="Auto,Auto,Auto,*,Auto">
+            <Button Grid.Column="0" ToolTip.Tip="添加附件" Command="{Binding AddAttachmentsCommand}"
+                    IsEnabled="{Binding CanChangeConversation}" Width="34" Height="32" Padding="7"
+                    Background="Transparent" BorderThickness="0">
+              <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Paperclip}"
+                                          Width="18" Height="18"/>
+            </Button>
+
+            <Button Grid.Column="1" ToolTip.Tip="高级生成配置" Command="{Binding ToggleAdvancedCommand}"
+                    IsEnabled="{Binding CanChangeConversation}" Width="34" Height="32"
+                    Padding="7" Background="Transparent" BorderThickness="0">
+              <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Tune}"
+                                          Width="18" Height="18"/>
+            </Button>
+
+            <ComboBox Grid.Column="2" Width="150" Height="28" MinHeight="28"
+                      VerticalAlignment="Center" Margin="6,0"
+                      FontSize="12" Padding="8,0,26,0" CornerRadius="8"
+                      Background="#F9FAFB" BorderBrush="#E4E7EC" BorderThickness="1"
+                      ItemsSource="{Binding InstalledModels}"
+                      SelectedItem="{Binding SelectedModel}" PlaceholderText="选择模型"
+                      IsEnabled="{Binding CanChangeConversation}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Title}" FontSize="12" Foreground="#344054"
+                             TextTrimming="CharacterEllipsis"/>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <CheckBox Grid.Column="3" Content="思考模式" IsChecked="{Binding IsThinking}"
+                      VerticalAlignment="Center" Margin="6,0" HorizontalAlignment="Left"
+                      IsEnabled="{Binding CanChangeConversation}"/>
+
+            <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4"
+                        VerticalAlignment="Center">
+              <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center"
+                         Margin="0,0,8,0" MaxWidth="220" FontSize="12" Foreground="#667085"
+                         TextTrimming="CharacterEllipsis"/>
+              <Button ToolTip.Tip="发送" Command="{Binding SendCommand}"
+                      IsVisible="{Binding CanShowSend}" IsEnabled="{Binding CanSend}"
+                      Width="36" Height="32" Padding="7" CornerRadius="8">
+                <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Send}"
+                                            Width="18" Height="18"/>
+              </Button>
+              <Button ToolTip.Tip="停止生成" Command="{Binding StopGenerationCommand}"
+                      IsVisible="{Binding CanStop}" Background="#D92D20" Foreground="White"
+                      Width="36" Height="32" Padding="7" CornerRadius="8">
+                <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Stop}"
+                                            Width="18" Height="18"/>
+              </Button>
+            </StackPanel>
           </Grid>
-          <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto">
-            <Button Content="添加附件" Command="{Binding AddAttachmentsCommand}" Padding="12,8"
-                    IsEnabled="{Binding CanChangeConversation}"/>
-            <CheckBox Grid.Column="1" Content="思考模式" IsChecked="{Binding IsThinking}"
-                      VerticalAlignment="Center" Margin="14,0" IsEnabled="{Binding CanChangeConversation}"/>
-            <Button Grid.Column="2" Content="高级配置" Command="{Binding ToggleAdvancedCommand}"
-                    Padding="12,8" IsEnabled="{Binding CanChangeConversation}"/>
-            <TextBlock Grid.Column="3" Text="{Binding StatusText}" VerticalAlignment="Center"
-                       Margin="12,0" Foreground="#667085" TextTrimming="CharacterEllipsis"/>
-            <Button Grid.Column="4" Content="发送" Command="{Binding SendCommand}" Padding="22,8"
-                    IsVisible="{Binding CanShowSend}" IsEnabled="{Binding CanSend}"/>
-            <Button Grid.Column="4" Content="停止" Command="{Binding StopGenerationCommand}"
-                    IsVisible="{Binding CanStop}" Background="#D92D20" Foreground="White"
-                    Padding="22,8"/>
-          </Grid>
-        </StackPanel>
+        </Grid>
       </Border>
+      <!-- ========== 输入区结束 ========== -->
 
       <!-- 高级配置弹窗 -->
       <Border IsVisible="{Binding IsAdvancedOpen}" Grid.RowSpan="2" Background="#990F172A"
@@ -229,11 +316,14 @@
                   <TextBlock Text="调整当前对话的生成行为，修改将应用于后续消息。"
                              FontSize="12" Foreground="#667085" TextWrapping="Wrap"/>
                 </StackPanel>
-                <Button Grid.Column="1" Content="×" Command="{Binding CloseAdvancedCommand}"
+                <Button Grid.Column="1" Command="{Binding CloseAdvancedCommand}"
                         Width="32" Height="32" Padding="0" FontSize="18"
                         Background="Transparent" BorderThickness="0" Foreground="#667085"
                         HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                        VerticalAlignment="Top" ToolTip.Tip="关闭"/>
+                        VerticalAlignment="Top" ToolTip.Tip="关闭">
+                  <materialIcons:MaterialIcon Kind="{x:Static icons:MaterialIconKind.Close}"
+                                              Width="18" Height="18"/>
+                </Button>
               </Grid>
             </Border>
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"

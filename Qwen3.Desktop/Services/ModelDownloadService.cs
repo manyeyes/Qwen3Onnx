@@ -33,7 +33,7 @@ public sealed class ModelDownloadService(HttpClient httpClient)
             RepositoryManifest manifest;
             if (cloneCompleted)
             {
-                manifest = InspectLocalManifest(stagingPath);
+                manifest = InspectLocalManifest(stagingPath, model);
                 var hasLfsPointers = manifest.Files.Any(file =>
                     IsGitLfsPointer(ResolveInsideDirectory(stagingPath, file.Path)));
                 var hasIncompleteDirectFiles = model.HttpFileLinks.Any(file =>
@@ -42,7 +42,7 @@ public sealed class ModelDownloadService(HttpClient httpClient)
                     return !File.Exists(path) || IsGitLfsPointer(path) ||
                            (file.Size > 0 && new FileInfo(path).Length != file.Size);
                 });
-                if (hasLfsPointers || hasIncompleteDirectFiles || !HasRequiredModelFiles(manifest))
+                if (hasLfsPointers || hasIncompleteDirectFiles || !HasRequiredModelFiles(manifest, model))
                 {
                     if (model.HttpFileLinks.Count == 0 &&
                         !TryGetModelScopeRepository(model.RepositoryUrl, out _))
@@ -66,9 +66,9 @@ public sealed class ModelDownloadService(HttpClient httpClient)
             }
 
             progress?.Report(new ModelDownloadProgress("正在校验必需模型文件…", 0, 0, null));
-            ValidateModelFiles(stagingPath, manifest);
+            ValidateModelFiles(stagingPath, manifest, model);
             var completeManifest = manifest.Files.Select(file => file.Path).ToArray();
-            var (embeddingFile, decoderFile) = FindGraphFiles(completeManifest);
+            var (embeddingFile, decoderFile) = FindGraphFiles(completeManifest, model);
             Directory.Move(stagingPath, model.LocalPath);
             var cleanupWarning = await TryDeleteGitMetadataAsync(model.LocalPath, progress);
             return new ModelDownloadResult(model with
@@ -133,13 +133,15 @@ public sealed class ModelDownloadService(HttpClient httpClient)
             return false;
         }
 
-        var requiredPaths = new[]
-        {
-            "config.json",
-            "tokenizer.json",
-            model.EmbeddingFileName,
-            model.DecoderFileName
-        }.Concat(model.HttpFileLinks.Select(file => file.Path));
+        var requiredPaths = model.RequiresGenAi
+            ? model.HttpFileLinks.Select(file => file.Path)
+            : new[]
+            {
+                "config.json",
+                "tokenizer.json",
+                model.EmbeddingFileName,
+                model.DecoderFileName
+            }.Concat(model.HttpFileLinks.Select(file => file.Path));
         return requiredPaths.All(relativePath =>
         {
             var path = Path.Combine(model.LocalPath, relativePath);
@@ -398,10 +400,10 @@ public sealed class ModelDownloadService(HttpClient httpClient)
         return new RepositoryManifest(files);
     }
 
-    private static RepositoryManifest InspectLocalManifest(string directory)
+    private static RepositoryManifest InspectLocalManifest(string directory, ModelDefinition model)
     {
         var files = new List<RepositoryFile>();
-        var rootNames = new[] { "config.json", "tokenizer.json" };
+        var rootNames = new[] { "config.json", "tokenizer.json", "genai_config.json" };
         foreach (var name in rootNames)
         {
             var path = Path.Combine(directory, name);
@@ -418,25 +420,38 @@ public sealed class ModelDownloadService(HttpClient httpClient)
                 files.Add(new RepositoryFile(name, new FileInfo(path).Length, null));
             }
         }
+        foreach (var link in model.HttpFileLinks)
+        {
+            var path = ResolveInsideDirectory(directory, link.Path);
+            if (File.Exists(path) &&
+                files.All(file => !string.Equals(file.Path, link.Path, StringComparison.OrdinalIgnoreCase)))
+            {
+                files.Add(new RepositoryFile(link.Path, new FileInfo(path).Length, link.Sha256, link.Url));
+            }
+        }
         return new RepositoryManifest(files);
     }
 
-    private static void ValidateModelFiles(string directory, RepositoryManifest manifest)
+    private static void ValidateModelFiles(
+        string directory, RepositoryManifest manifest, ModelDefinition model)
     {
-        var requiredPaths = new[]
-        {
-            "config.json",
-            "tokenizer.json",
-            manifest.Files.FirstOrDefault(file => IsGraphFile(file.Path, "embedding"))?.Path,
-            manifest.Files.FirstOrDefault(file => IsGraphFile(file.Path, "decoder"))?.Path
-        };
+        IEnumerable<string?> requiredPaths = model.RequiresGenAi
+            ? GetRequiredGenAiFiles(model).Concat(model.HttpFileLinks.Select(file => (string?)file.Path))
+            : new string?[]
+            {
+                "config.json",
+                "tokenizer.json",
+                manifest.Files.FirstOrDefault(file => IsGraphFile(file.Path, "embedding"))?.Path,
+                manifest.Files.FirstOrDefault(file => IsGraphFile(file.Path, "decoder"))?.Path
+            }.Concat(model.HttpFileLinks.Select(file => (string?)file.Path));
         if (requiredPaths.Any(string.IsNullOrWhiteSpace))
         {
-            throw new InvalidDataException(
-                "Downloaded model is incomplete. Required files: config.json, tokenizer.json, an embedding*.onnx and a decoder*.onnx file.");
+            throw new InvalidDataException(model.RequiresGenAi
+                ? "Downloaded GenAI model is incomplete."
+                : "Downloaded model is incomplete. Required files: config.json, tokenizer.json, embedding*.onnx and decoder*.onnx.");
         }
 
-        foreach (var relativePath in requiredPaths)
+        foreach (var relativePath in requiredPaths.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var path = ResolveInsideDirectory(directory, relativePath!);
             if (!File.Exists(path))
@@ -454,16 +469,91 @@ public sealed class ModelDownloadService(HttpClient httpClient)
                 throw new InvalidDataException($"Required model file is still a Git LFS pointer: {relativePath}");
             }
         }
+
+        if (model.RequiresGenAi)
+        {
+            var templatePath = ResolveInsideDirectory(directory, "chat_template.jinja");
+            if (string.IsNullOrWhiteSpace(File.ReadAllText(templatePath)))
+            {
+                throw new InvalidDataException("Required model file is empty: chat_template.jinja");
+            }
+            if (model.IsLlamaGenAi)
+            {
+                ValidateLlamaTokenizerConfig(directory);
+            }
+        }
     }
 
-    private static bool HasRequiredModelFiles(RepositoryManifest manifest) =>
-        manifest.Files.Any(file => string.Equals(file.Path, "config.json", StringComparison.OrdinalIgnoreCase)) &&
-        manifest.Files.Any(file => string.Equals(file.Path, "tokenizer.json", StringComparison.OrdinalIgnoreCase)) &&
-        manifest.Files.Any(file => IsGraphFile(file.Path, "embedding")) &&
-        manifest.Files.Any(file => IsGraphFile(file.Path, "decoder"));
-
-    private static (string Embedding, string Decoder) FindGraphFiles(IEnumerable<string> paths)
+    private static bool HasRequiredModelFiles(RepositoryManifest manifest, ModelDefinition model)
     {
+        var files = manifest.Files.Select(file => file.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (model.RequiresGenAi)
+        {
+            return GetRequiredGenAiFiles(model)
+                .Concat(model.HttpFileLinks.Select(file => file.Path))
+                .All(files.Contains);
+        }
+
+        return files.Contains("config.json") &&
+               files.Contains("tokenizer.json") &&
+               manifest.Files.Any(file => IsGraphFile(file.Path, "embedding")) &&
+               manifest.Files.Any(file => IsGraphFile(file.Path, "decoder"));
+    }
+
+    private static IReadOnlyList<string> GetRequiredGenAiFiles(ModelDefinition model)
+    {
+        string[] requiredFiles =
+        {
+            "chat_template.jinja",
+            "genai_config.json",
+            "model.onnx",
+            "model.onnx.data",
+            "tokenizer.json",
+            "tokenizer_config.json"
+        };
+
+        if (model.IsPhiGenAi)
+        {
+            return
+            [
+                "added_tokens.json",
+                .. requiredFiles,
+                "merges.txt",
+                "special_tokens_map.json",
+                "vocab.json"
+            ];
+        }
+
+        if (model.IsDeepSeekGenAi)
+        {
+            return
+            [
+                .. requiredFiles,
+                "special_tokens_map.json"
+            ];
+        }
+
+        return requiredFiles;
+    }
+
+    private static void ValidateLlamaTokenizerConfig(string directory)
+    {
+        var tokenizerConfigPath = ResolveInsideDirectory(directory, "tokenizer_config.json");
+        using var tokenizerConfig = JsonDocument.Parse(File.ReadAllText(tokenizerConfigPath));
+        if (tokenizerConfig.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException(
+                "Llama tokenizer_config.json must contain a JSON object.");
+        }
+    }
+
+    private static (string Embedding, string Decoder) FindGraphFiles(
+        IEnumerable<string> paths, ModelDefinition model)
+    {
+        if (model.RequiresGenAi)
+        {
+            return (string.Empty, string.Empty);
+        }
         var embedding = paths.FirstOrDefault(path => IsGraphFile(path, "embedding"));
         var decoder = paths.FirstOrDefault(path => IsGraphFile(path, "decoder"));
         if (embedding is null || decoder is null)

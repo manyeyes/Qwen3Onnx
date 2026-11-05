@@ -1,11 +1,25 @@
-using System.Security.Cryptography;
-using System.Globalization;
-using System.Text;
-using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using Qwen3.Desktop.Models;
+using System;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+using Tmds.DBus.Protocol;
 
 namespace Qwen3.Desktop.Services;
+
+// 把你在 SeedModelsAsync 里面序列化/反序列化用到的所有实体放进去
+[JsonSourceGenerationOptions(WriteIndented = false)]
+[JsonSerializable(typeof(List<ModelFileLink>))]
+[JsonSerializable(typeof(ModelFileLink[]))]
+[JsonSerializable(typeof(string[]))]
+[JsonSerializable(typeof(List<string>))]
+internal partial class AppJsonContext : JsonSerializerContext
+{
+}
 
 public sealed class SqliteDatabase
 {
@@ -28,17 +42,100 @@ public sealed class SqliteDatabase
         ("工作与生活", ["工作", "生活", "计划", "健康", "旅行", "沟通", "建议", "管理", "职业"])
     ];
 
-    private static readonly (string Title, string Name, string Description, string Url)[] BuiltInModels =
-    [
-        ("Qwen3 0.6B INT8", "Qwen3-0.6B-int8-onnx", "Qwen3 0.6B ONNX model, INT8 quantized.",
-            "https://modelscope.cn/models/manyeyes/Qwen3-0.6B-int8-onnx"),
-        ("Qwen3 0.6B W4A32", "Qwen3-0.6B-w4a32-onnx", "Qwen3 0.6B ONNX model, W4A32 quantized.",
-            "https://modelscope.cn/models/manyeyes/Qwen3-0.6B-w4a32-onnx"),
-        ("Qwen3 1.7B INT8", "Qwen3-1.7B-int8-onnx", "Qwen3 1.7B ONNX model, INT8 quantized.",
-            "https://modelscope.cn/models/manyeyes/Qwen3-1.7B-int8-onnx"),
-        ("Qwen3 1.7B W4A32", "Qwen3-1.7B-w4a32-onnx", "Qwen3 1.7B ONNX model, W4A32 quantized.",
-            "https://modelscope.cn/models/manyeyes/Qwen3-1.7B-w4a32-onnx")
-    ];
+    private static readonly (string Title, string Name, string Description, string Url, string EngineId)[] BuiltInModels =
+[
+    // ==================== 非 GenAI：ONNX（不区分 CPU/GPU） ====================
+    // ---- Qwen3 系列 ----
+    ("Qwen3 0.6B INT8", "Qwen3-0.6B-int8-onnx",
+        "Qwen3 0.6B ONNX model, INT8 quantized.",
+        "https://modelscope.cn/models/manyeyes/Qwen3-0.6B-int8-onnx", "qwen3-onnx"),
+    ("Qwen3 0.6B W4A32", "Qwen3-0.6B-w4a32-onnx",
+        "Qwen3 0.6B ONNX model, W4A32 quantized.",
+        "https://modelscope.cn/models/manyeyes/Qwen3-0.6B-w4a32-onnx", "qwen3-onnx"),
+    ("Qwen3 1.7B INT8", "Qwen3-1.7B-int8-onnx",
+        "Qwen3 1.7B ONNX model, INT8 quantized.",
+        "https://modelscope.cn/models/manyeyes/Qwen3-1.7B-int8-onnx", "qwen3-onnx"),
+    ("Qwen3 1.7B W4A32", "Qwen3-1.7B-w4a32-onnx",
+        "Qwen3 1.7B ONNX model, W4A32 quantized.",
+        "https://modelscope.cn/models/manyeyes/Qwen3-1.7B-w4a32-onnx", "qwen3-onnx"),
+
+    // ==================== GenAI CPU（始终可用） ====================
+    // ---- Qwen2.5 系列 ----
+    ("Qwen2.5 0.5B Instruct INT4 GenAI CPU", "Qwen2.5-0.5B-Instruct-int4-cpu-genai",
+        "Qwen2.5 0.5B Instruct ONNX Runtime GenAI model, INT4 quantized for CPU inference.",
+        "https://modelscope.cn/models/manyeyes/Qwen2.5-0.5B-Instruct-int4-cpu-genai", "qwen3-onnx-genai"),
+    ("Qwen2.5 1.5B Instruct INT4 GenAI CPU", "Qwen2.5-1.5B-Instruct-int4-cpu-genai",
+        "Qwen2.5 1.5B Instruct ONNX Runtime GenAI model, INT4 quantized for CPU inference.",
+        "https://modelscope.cn/models/manyeyes/Qwen2.5-1.5B-Instruct-int4-cpu-genai", "qwen3-onnx-genai"),
+    // ---- Qwen3 系列 ----
+    ("Qwen3 0.6B INT4 GenAI CPU", "Qwen3-0.6B-int4-cpu-genai",
+        "Qwen3 0.6B ONNX Runtime GenAI model, INT4 quantized for CPU inference.",
+        "https://modelscope.cn/models/manyeyes/Qwen3-0.6B-int4-cpu-genai", "qwen3-onnx-genai"),
+    ("Qwen3 1.7B INT4 GenAI CPU", "Qwen3-1.7B-int4-cpu-genai",
+        "Qwen3 1.7B ONNX Runtime GenAI model, INT4 quantized for CPU inference.",
+        "https://modelscope.cn/models/manyeyes/Qwen3-1.7B-int4-cpu-genai", "qwen3-onnx-genai"),
+    ("Qwen3 4B INT4 GenAI CPU", "Qwen3-4B-int4-cpu-genai",
+        "Qwen3 4B ONNX Runtime GenAI model, INT4 quantized for CPU inference.",
+        "https://modelscope.cn/models/manyeyes/Qwen3-4B-int4-cpu-genai", "qwen3-onnx-genai"),
+    // ---- Llama 3.2 系列 ----
+    ("Llama 3.2 1B Instruct INT4 GenAI CPU", "Llama-3.2-1B-Instruct-int4-cpu-genai",
+        "Llama 3.2 1B Instruct ONNX Runtime GenAI model, INT4 quantized for CPU inference.",
+        "https://modelscope.cn/models/onnx-community/Llama-3.2-1B-Instruct-int4-cpu-genai", "llama-onnx-genai"),
+    ("Llama 3.2 3B Instruct INT4 GenAI CPU", "Llama-3.2-3B-Instruct-int4-cpu-genai",
+        "Llama 3.2 3B Instruct ONNX Runtime GenAI model, INT4 quantized for CPU inference.",
+        "https://modelscope.cn/models/onnx-community/Llama-3.2-3B-Instruct-int4-cpu-genai", "llama-onnx-genai"),
+    // ---- DeepSeek-R1-Distill-Qwen-1.5B ----
+    ("DeepSeek-R1-Distill-Qwen 1.5B INT4 GenAI CPU", "DeepSeek-R1-Distill-Qwen-1.5B-int4-cpu-genai",
+        "DeepSeek-R1-Distill-Qwen 1.5B ONNX Runtime GenAI model, INT4 quantized for CPU inference.",
+        "https://modelscope.cn/models/manyeyes/DeepSeek-R1-Distill-Qwen-1.5B-int4-cpu-genai", "deepseek-onnx-genai"),
+    // ---- Phi-4-mini 系列 ----
+    ("Phi-4-mini Instruct INT4 GenAI CPU", "Phi-4-mini-instruct-int4-cpu-genai",
+        "Phi-4-mini Instruct ONNX Runtime GenAI model, INT4 quantized for CPU inference.",
+        "https://modelscope.cn/models/manyeyes/Phi-4-mini-instruct-int4-cpu-genai", "phi-onnx-genai"),
+
+    // ==================== GenAI CUDA（仅 GPU 构建） ====================
+#if INFERENCE_BACKEND_GPU
+    // ---- Qwen3 系列 ----
+    ("Qwen3 0.6B INT4 GenAI CUDA", "Qwen3-0.6B-int4-cuda-genai",
+        "Qwen3 0.6B ONNX Runtime GenAI model, INT4 quantized for CUDA inference.",
+        "https://modelscope.cn/models/manyeyes/Qwen3-0.6B-int4-cuda-genai", "qwen3-onnx-genai"),
+    ("Qwen3 0.6B FP16 GenAI CUDA", "Qwen3-0.6B-fp16-cuda-genai",
+        "Qwen3 0.6B ONNX Runtime GenAI model, FP16 quantized for CUDA inference.",
+        "https://modelscope.cn/models/manyeyes/Qwen3-0.6B-fp16-cuda-genai", "qwen3-onnx-genai"),
+    ("Qwen3 1.7B INT4 GenAI CUDA", "Qwen3-1.7B-int4-cuda-genai",
+        "Qwen3 1.7B ONNX Runtime GenAI model, INT4 quantized for CUDA inference.",
+        "https://modelscope.cn/models/manyeyes/Qwen3-1.7B-int4-cuda-genai", "qwen3-onnx-genai"),
+    ("Qwen3 1.7B FP16 GenAI CUDA", "Qwen3-1.7B-fp16-cuda-genai",
+        "Qwen3 1.7B ONNX Runtime GenAI model, FP16 quantized for CUDA inference.",
+        "https://modelscope.cn/models/manyeyes/Qwen3-1.7B-fp16-cuda-genai", "qwen3-onnx-genai"),
+    ("Qwen3 4B INT4 GenAI CUDA", "Qwen3-4B-int4-cuda-genai",
+        "Qwen3 4B ONNX Runtime GenAI model, INT4 quantized for CUDA inference.",
+        "https://modelscope.cn/models/manyeyes/Qwen3-4B-int4-cuda-genai", "qwen3-onnx-genai"),
+    ("Qwen3 4B FP16 GenAI CUDA", "Qwen3-4B-fp16-cuda-genai",
+        "Qwen3 4B ONNX Runtime GenAI model, FP16 quantized for CUDA inference.",
+        "https://modelscope.cn/models/manyeyes/Qwen3-4B-fp16-cuda-genai", "qwen3-onnx-genai"),
+    // ---- Llama 3.2 系列 ----
+    ("Llama 3.2 1B Instruct INT4 GenAI CUDA", "Llama-3.2-1B-Instruct-int4-cuda-genai",
+        "Llama 3.2 1B Instruct ONNX Runtime GenAI model, INT4 quantized for CUDA inference.",
+        "https://modelscope.cn/models/onnx-community/Llama-3.2-1B-Instruct-int4-cuda-genai", "llama-onnx-genai"),
+    ("Llama 3.2 1B Instruct FP16 GenAI CUDA", "Llama-3.2-1B-Instruct-fp16-cuda-genai",
+        "Llama 3.2 1B Instruct ONNX Runtime GenAI model, FP16 quantized for CUDA inference.",
+        "https://modelscope.cn/models/onnx-community/Llama-3.2-1B-Instruct-fp16-cuda-genai", "llama-onnx-genai"),
+    ("Llama 3.2 3B Instruct INT4 GenAI CUDA", "Llama-3.2-3B-Instruct-int4-cuda-genai",
+        "Llama 3.2 3B Instruct ONNX Runtime GenAI model, INT4 quantized for CUDA inference.",
+        "https://modelscope.cn/models/onnx-community/Llama-3.2-3B-Instruct-int4-cuda-genai", "llama-onnx-genai"),
+    ("Llama 3.2 3B Instruct FP16 GenAI CUDA", "Llama-3.2-3B-Instruct-fp16-cuda-genai",
+        "Llama 3.2 3B Instruct ONNX Runtime GenAI model, FP16 quantized for CUDA inference.",
+        "https://modelscope.cn/models/onnx-community/Llama-3.2-3B-Instruct-fp16-cuda-genai", "llama-onnx-genai"),
+    // ---- DeepSeek-R1-Distill-Qwen-1.5B ----
+    ("DeepSeek-R1-Distill-Qwen 1.5B FP16 GenAI CUDA", "DeepSeek-R1-Distill-Qwen-1.5B-fp16-cuda-genai",
+        "DeepSeek-R1-Distill-Qwen 1.5B ONNX Runtime GenAI model, FP16 quantized for CUDA inference.",
+        "https://modelscope.cn/models/manyeyes/DeepSeek-R1-Distill-Qwen-1.5B-fp16-cuda-genai", "deepseek-onnx-genai"),
+    ("DeepSeek-R1-Distill-Qwen 7B INT4 GenAI CUDA", "DeepSeek-R1-Distill-Qwen-7B-int4-cuda-genai",
+        "DeepSeek-R1-Distill-Qwen 7B ONNX Runtime GenAI model, INT4 quantized for CUDA inference.",
+        "https://modelscope.cn/models/manyeyes/DeepSeek-R1-Distill-Qwen-7B-int4-cuda-genai", "deepseek-onnx-genai"),
+#endif
+];
 
     private readonly string _connectionString;
     private readonly string _modelsDirectory;
@@ -104,6 +201,7 @@ public sealed class SqliteDatabase
                     decoder_file_name TEXT NOT NULL DEFAULT 'decoder.int8.onnx',
                     required_files_json TEXT NOT NULL DEFAULT '[]',
                     direct_downloads_json TEXT NOT NULL DEFAULT '[]',
+                    inference_engine_id TEXT NOT NULL DEFAULT 'qwen3-onnx',
                     created_utc TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS conversations (
@@ -125,6 +223,8 @@ public sealed class SqliteDatabase
                     attachments_json TEXT NOT NULL DEFAULT '[]',
                     token_count INTEGER NOT NULL DEFAULT 0,
                     was_interrupted INTEGER NOT NULL DEFAULT 0,
+                    generation_time_seconds REAL NOT NULL DEFAULT 0,
+                    stop_reason TEXT NOT NULL DEFAULT '',
                     created_utc TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS ix_messages_conversation_created
@@ -144,13 +244,15 @@ public sealed class SqliteDatabase
         }
 
         await EnsureModelDownloadColumnAsync(connection, cancellationToken);
+        await EnsureModelEngineColumnAsync(connection, cancellationToken);
         await EnsureUserProfileColumnsAsync(connection, cancellationToken);
         await EnsureInterruptedMessageColumnAsync(connection, cancellationToken);
+        await EnsureMessageGenerationMetadataAsync(connection, cancellationToken);
         await EnsureConversationPinnedColumnAsync(connection, cancellationToken);
         await using (var versionCommand = connection.CreateCommand())
         {
             versionCommand.CommandText =
-                "UPDATE app_metadata SET value = '6' WHERE key = 'schema_version';";
+            "UPDATE app_metadata SET value = '8' WHERE key = 'schema_version';";
             await versionCommand.ExecuteNonQueryAsync(cancellationToken);
         }
         await SeedModelsAsync(connection, cancellationToken);
@@ -185,7 +287,8 @@ public sealed class SqliteDatabase
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT id, title, english_name, description, repository_url, local_path, is_installed,
-                   embedding_file_name, decoder_file_name, required_files_json, direct_downloads_json
+                   embedding_file_name, decoder_file_name, required_files_json, direct_downloads_json,
+                   inference_engine_id
             FROM models ORDER BY title COLLATE NOCASE;
             """;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -196,8 +299,9 @@ public sealed class SqliteDatabase
                 reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
                 reader.GetString(4), reader.GetString(5), reader.GetInt64(6) != 0,
                 reader.GetString(7), reader.GetString(8),
-                System.Text.Json.JsonSerializer.Deserialize<string[]>(reader.GetString(9)) ?? [],
-                System.Text.Json.JsonSerializer.Deserialize<ModelFileLink[]>(reader.GetString(10)) ?? []));
+                JsonSerializer.Deserialize(reader.GetString(9), AppJsonContext.Default.StringArray) ?? [],
+                JsonSerializer.Deserialize(reader.GetString(10), AppJsonContext.Default.ModelFileLinkArray) ?? [],
+                reader.GetString(11)));
         }
         return results;
     }
@@ -210,6 +314,7 @@ public sealed class SqliteDatabase
         ValidateModelFields(title, englishName, repositoryUrl, httpFileLinks);
         var safeName = SanitizeModelDirectoryName(englishName);
         var localPath = Path.Combine(_modelsDirectory, safeName);
+        var fileLinks = httpFileLinks as ModelFileLink[] ?? httpFileLinks.ToArray();
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -224,7 +329,8 @@ public sealed class SqliteDatabase
         command.Parameters.AddWithValue("$name", safeName);
         command.Parameters.AddWithValue("$description", description.Trim());
         command.Parameters.AddWithValue("$url", repositoryUrl.Trim());
-        command.Parameters.AddWithValue("$files", System.Text.Json.JsonSerializer.Serialize(httpFileLinks));
+        command.Parameters.AddWithValue("$files",
+            JsonSerializer.Serialize(fileLinks, AppJsonContext.Default.ModelFileLinkArray));
         command.Parameters.AddWithValue("$path", localPath);
         command.Parameters.AddWithValue("$created", DateTimeOffset.UtcNow.ToString("O"));
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -241,6 +347,7 @@ public sealed class SqliteDatabase
     {
         ValidateModelFields(title, englishName, repositoryUrl, httpFileLinks);
         var safeName = SanitizeModelDirectoryName(englishName);
+        var fileLinks = httpFileLinks as ModelFileLink[] ?? httpFileLinks.ToArray();
         await using var connection = await OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var currentCommand = connection.CreateCommand();
@@ -279,7 +386,8 @@ public sealed class SqliteDatabase
         update.Parameters.AddWithValue("$name", safeName);
         update.Parameters.AddWithValue("$description", description.Trim());
         update.Parameters.AddWithValue("$url", repositoryUrl.Trim());
-        update.Parameters.AddWithValue("$files", System.Text.Json.JsonSerializer.Serialize(httpFileLinks));
+        update.Parameters.AddWithValue("$files",
+            JsonSerializer.Serialize(fileLinks, AppJsonContext.Default.ModelFileLinkArray));
         update.Parameters.AddWithValue("$path", Path.Combine(_modelsDirectory, safeName));
         update.Parameters.AddWithValue("$id", modelId);
         if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
@@ -294,6 +402,7 @@ public sealed class SqliteDatabase
         IReadOnlyList<string> requiredFiles, bool installed,
         CancellationToken cancellationToken = default)
     {
+        var required = requiredFiles as string[] ?? requiredFiles.ToArray();
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -303,7 +412,8 @@ public sealed class SqliteDatabase
         command.Parameters.AddWithValue("$installed", installed ? 1 : 0);
         command.Parameters.AddWithValue("$embedding", embeddingFileName);
         command.Parameters.AddWithValue("$decoder", decoderFileName);
-        command.Parameters.AddWithValue("$files", System.Text.Json.JsonSerializer.Serialize(requiredFiles));
+        command.Parameters.AddWithValue("$files",
+            JsonSerializer.Serialize(required, AppJsonContext.Default.StringArray));
         command.Parameters.AddWithValue("$id", modelId);
         if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
         {
@@ -352,6 +462,7 @@ public sealed class SqliteDatabase
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) != 0;
     }
 
+    // Generation metadata is stored with assistant rows for historical details.
     public async Task<string> SaveTurnAsync(
         string? conversationId,
         string? ownerUserId,
@@ -364,10 +475,13 @@ public sealed class SqliteDatabase
         string assistantContent,
         int completionTokens,
         CancellationToken cancellationToken = default,
-        bool wasInterrupted = false)
+        bool wasInterrupted = false,
+        double generationTimeSeconds = 0,
+        string stopReason = "")
     {
         var id = conversationId ?? Guid.NewGuid().ToString("N");
         var now = DateTimeOffset.UtcNow.ToString("O");
+        var attachmentArray = attachments as string[] ?? attachments.ToArray();
         await using var connection = await OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -411,8 +525,9 @@ public sealed class SqliteDatabase
             message.Transaction = (SqliteTransaction)transaction;
             message.CommandText = """
                 INSERT INTO messages(id, conversation_id, role, content, attachments_json, token_count,
-                    was_interrupted, created_utc)
-                VALUES($id, $conversation, $role, $content, $attachments, $tokens, $interrupted, $created);
+                    was_interrupted, generation_time_seconds, stop_reason, created_utc)
+                VALUES($id, $conversation, $role, $content, $attachments, $tokens, $interrupted,
+                    $generation_seconds, $stop_reason, $created);
                 """;
             message.Parameters.Add("$id", SqliteType.Text);
             message.Parameters.AddWithValue("$conversation", id);
@@ -421,22 +536,30 @@ public sealed class SqliteDatabase
             message.Parameters.Add("$attachments", SqliteType.Text);
             message.Parameters.Add("$tokens", SqliteType.Integer);
             message.Parameters.Add("$interrupted", SqliteType.Integer);
+            message.Parameters.Add("$generation_seconds", SqliteType.Real);
+            message.Parameters.Add("$stop_reason", SqliteType.Text);
             message.Parameters.AddWithValue("$created", now);
 
             message.Parameters["$id"].Value = Guid.NewGuid().ToString("N");
             message.Parameters["$role"].Value = "user";
             message.Parameters["$content"].Value = userContent;
-            message.Parameters["$attachments"].Value = System.Text.Json.JsonSerializer.Serialize(attachments);
+            message.Parameters["$attachments"].Value =
+                JsonSerializer.Serialize(attachmentArray, AppJsonContext.Default.StringArray);
             message.Parameters["$tokens"].Value = Math.Max(0, promptTokens);
             message.Parameters["$interrupted"].Value = 0;
+            message.Parameters["$generation_seconds"].Value = 0d;
+            message.Parameters["$stop_reason"].Value = string.Empty;
             await message.ExecuteNonQueryAsync(cancellationToken);
 
             message.Parameters["$id"].Value = Guid.NewGuid().ToString("N");
             message.Parameters["$role"].Value = "assistant";
             message.Parameters["$content"].Value = assistantContent;
-            message.Parameters["$attachments"].Value = "[]";
+            message.Parameters["$attachments"].Value =
+                JsonSerializer.Serialize(Array.Empty<string>(), AppJsonContext.Default.StringArray);
             message.Parameters["$tokens"].Value = Math.Max(0, completionTokens);
             message.Parameters["$interrupted"].Value = wasInterrupted ? 1 : 0;
+            message.Parameters["$generation_seconds"].Value = Math.Max(0, generationTimeSeconds);
+            message.Parameters["$stop_reason"].Value = stopReason ?? string.Empty;
             await message.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -484,7 +607,9 @@ public sealed class SqliteDatabase
         int promptTokens,
         int completionTokens,
         CancellationToken cancellationToken = default,
-        bool wasInterrupted = false)
+        bool wasInterrupted = false,
+        double generationTimeSeconds = 0,
+        string stopReason = "")
     {
         var now = DateTimeOffset.UtcNow.ToString("O");
         await using var connection = await OpenAsync(cancellationToken);
@@ -495,7 +620,8 @@ public sealed class SqliteDatabase
             update.Transaction = (SqliteTransaction)transaction;
             update.CommandText = """
                 UPDATE messages SET content = $content, token_count = $tokens,
-                    was_interrupted = $interrupted, created_utc = $updated
+                    was_interrupted = $interrupted, generation_time_seconds = $generation_seconds,
+                    stop_reason = $stop_reason, created_utc = $updated
                 WHERE id = $message AND conversation_id = $conversation AND role = 'assistant'
                     AND rowid = (
                         SELECT MAX(rowid) FROM messages
@@ -510,6 +636,8 @@ public sealed class SqliteDatabase
             update.Parameters.AddWithValue("$content", assistantContent);
             update.Parameters.AddWithValue("$tokens", Math.Max(0, completionTokens));
             update.Parameters.AddWithValue("$interrupted", wasInterrupted ? 1 : 0);
+            update.Parameters.AddWithValue("$generation_seconds", Math.Max(0, generationTimeSeconds));
+            update.Parameters.AddWithValue("$stop_reason", stopReason ?? string.Empty);
             update.Parameters.AddWithValue("$updated", now);
             update.Parameters.AddWithValue("$message", assistantMessageId);
             update.Parameters.AddWithValue("$conversation", conversationId);
@@ -595,7 +723,7 @@ public sealed class SqliteDatabase
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT m.id, m.conversation_id, m.role, m.content, m.attachments_json, m.token_count,
-                m.created_utc, m.was_interrupted
+                m.created_utc, m.was_interrupted, m.generation_time_seconds, m.stop_reason
             FROM messages m JOIN conversations c ON c.id = m.conversation_id
             WHERE c.id = $conversation AND
                 (($owner IS NULL AND c.owner_user_id IS NULL) OR c.owner_user_id = $owner)
@@ -609,10 +737,55 @@ public sealed class SqliteDatabase
         {
             results.Add(new StoredMessage(
                 reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
-                System.Text.Json.JsonSerializer.Deserialize<string[]>(reader.GetString(4)) ?? [],
-                reader.GetInt32(5), DateTimeOffset.Parse(reader.GetString(6)), reader.GetInt64(7) != 0));
+                JsonSerializer.Deserialize(reader.GetString(4), AppJsonContext.Default.StringArray) ?? [],
+                reader.GetInt32(5), DateTimeOffset.Parse(reader.GetString(6)), reader.GetInt64(7) != 0,
+                reader.GetDouble(8), reader.GetString(9)));
         }
         return results;
+    }
+
+    public async Task DeleteMessageAsync(
+        string conversationId,
+        string messageId,
+        string? ownerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow.ToString("O");
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var delete = connection.CreateCommand())
+        {
+            delete.Transaction = (SqliteTransaction)transaction;
+            delete.CommandText = """
+                DELETE FROM messages
+                WHERE id = $message AND conversation_id = $conversation
+                    AND EXISTS (
+                        SELECT 1 FROM conversations
+                        WHERE id = $conversation AND
+                            (($owner IS NULL AND owner_user_id IS NULL) OR owner_user_id = $owner)
+                    );
+                """;
+            delete.Parameters.AddWithValue("$message", messageId);
+            delete.Parameters.AddWithValue("$conversation", conversationId);
+            delete.Parameters.AddWithValue("$owner", (object?)ownerUserId ?? DBNull.Value);
+            if (await delete.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new UnauthorizedAccessException(
+                    "Message does not exist or is not accessible to this user.");
+            }
+        }
+
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = (SqliteTransaction)transaction;
+            update.CommandText =
+                "UPDATE conversations SET updated_utc = $updated WHERE id = $conversation;";
+            update.Parameters.AddWithValue("$updated", now);
+            update.Parameters.AddWithValue("$conversation", conversationId);
+            await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<UserAccount?> AuthenticateAsync(
@@ -1063,17 +1236,21 @@ public sealed class SqliteDatabase
         {
             var directoryName = SanitizeModelDirectoryName(model.Name);
             var path = Path.Combine(_modelsDirectory, directoryName);
+            //var isGenAi = string.Equals(model.EngineId, "qwen3-onnx-genai", StringComparison.OrdinalIgnoreCase);
+            var isGenAi = !string.IsNullOrEmpty(model.EngineId) && model.EngineId.Contains("genai", StringComparison.OrdinalIgnoreCase);
             var isW4A32 = model.Name.Contains("w4a32", StringComparison.OrdinalIgnoreCase);
-            const string embedding = "embedding.int8.onnx";
-            var decoder = isW4A32 ? "decoder.int4.onnx" : "decoder.int8.onnx";
-            var directDownloads = CreateBuiltInModelFileLinks(model.Name, decoder, isW4A32);
+            var embedding = isGenAi ? string.Empty : "embedding.int8.onnx";
+            var decoder = isGenAi ? string.Empty : isW4A32 ? "decoder.int4.onnx" : "decoder.int8.onnx";
+            var defaultDownloads = CreateBuiltInModelFileLinks(
+                model.Name, model.Url, model.EngineId, decoder);
+
             await using var command = connection.CreateCommand();
             command.CommandText = """
                 INSERT OR IGNORE INTO models(id, title, english_name, description, repository_url, local_path,
                     is_installed, embedding_file_name, decoder_file_name, required_files_json,
-                    direct_downloads_json, created_utc)
+                    direct_downloads_json, inference_engine_id, created_utc)
                 VALUES($id, $title, $name, $description, $url, $path, 0, $embedding, $decoder,
-                    '[]', $downloads, $created);
+                    '[]', $downloads, $engine, $created);
                 """;
             command.Parameters.AddWithValue("$id", directoryName.ToLowerInvariant());
             command.Parameters.AddWithValue("$title", model.Title);
@@ -1084,49 +1261,146 @@ public sealed class SqliteDatabase
             command.Parameters.AddWithValue("$embedding", embedding);
             command.Parameters.AddWithValue("$decoder", decoder);
             command.Parameters.AddWithValue(
-                "$downloads", System.Text.Json.JsonSerializer.Serialize(directDownloads));
+                "$downloads", JsonSerializer.Serialize(defaultDownloads, AppJsonContext.Default.ModelFileLinkArray));
+            command.Parameters.AddWithValue("$engine", model.EngineId);
             command.Parameters.AddWithValue("$created", DateTimeOffset.UtcNow.ToString("O"));
             await command.ExecuteNonQueryAsync(cancellationToken);
+
+            await using var readLinks = connection.CreateCommand();
+            readLinks.CommandText = "SELECT direct_downloads_json FROM models WHERE id = $id;";
+            readLinks.Parameters.AddWithValue("$id", directoryName.ToLowerInvariant());
+            var existingJson = (string?)await readLinks.ExecuteScalarAsync(cancellationToken) ?? "[]";
+            var existingLinks =
+                JsonSerializer.Deserialize(existingJson, AppJsonContext.Default.ModelFileLinkArray) ?? [];
+            var mergedLinks = new Dictionary<string, ModelFileLink>(StringComparer.OrdinalIgnoreCase);
+            foreach (var link in existingLinks)
+            {
+                mergedLinks.TryAdd(link.Path, link);
+            }
+            foreach (var link in defaultDownloads)
+            {
+                var legacyDefaultPrefix =
+                    $"https://modelscope.cn/models/manyeyes/{model.Name}/resolve/master/";
+                if (!mergedLinks.TryGetValue(link.Path, out var existingLink) ||
+                    existingLink.Url.StartsWith(legacyDefaultPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    mergedLinks[link.Path] = link;
+                }
+            }
+            var serializedDownloads =
+                JsonSerializer.Serialize(mergedLinks.Values.ToArray(), AppJsonContext.Default.ModelFileLinkArray);
 
             await using var update = connection.CreateCommand();
             update.CommandText = """
                 UPDATE models SET
                     embedding_file_name = $embedding,
                     decoder_file_name = $decoder,
-                    direct_downloads_json = CASE
-                        WHEN direct_downloads_json = '[]' THEN $downloads
-                        ELSE direct_downloads_json
-                    END
+                    inference_engine_id = $engine,
+                    direct_downloads_json = $downloads
                 WHERE id = $id;
                 """;
             update.Parameters.AddWithValue("$id", directoryName.ToLowerInvariant());
             update.Parameters.AddWithValue("$embedding", embedding);
             update.Parameters.AddWithValue("$decoder", decoder);
-            update.Parameters.AddWithValue(
-                "$downloads", System.Text.Json.JsonSerializer.Serialize(directDownloads));
+            update.Parameters.AddWithValue("$downloads", serializedDownloads);
+            update.Parameters.AddWithValue("$engine", model.EngineId);
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
     }
 
     private static IReadOnlyList<ModelFileLink> CreateBuiltInModelFileLinks(
-        string modelName, string decoderFile, bool includesExternalDecoderWeights)
+    string modelName, string repositoryUrl, string engineId, string decoderFile)
     {
-        var repository = $"https://modelscope.cn/models/manyeyes/{modelName}/resolve/master/";
-        var fileNames = new List<string>
+        var repository = $"{repositoryUrl.TrimEnd('/')}/resolve/master/";
+
+        var fileNames = engineId.ToLowerInvariant() switch
         {
+            // Qwen GenAI：带 chat_template.jinja
+            "qwen3-onnx-genai" => new[]
+            {
+            "chat_template.jinja",
+            "genai_config.json",
+            "model.onnx",
+            "model.onnx.data",
+            "tokenizer.json",
+            "tokenizer_config.json"
+        },
+
+            "phi-onnx-genai" => new[]
+            {
+            "added_tokens.json",
+            "chat_template.jinja",
+            "genai_config.json",
+            "merges.txt",
+            "model.onnx",
+            "model.onnx.data",
+            "special_tokens_map.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "vocab.json"
+        },
+
+            "deepseek-onnx-genai" => new[]
+            {
+            "chat_template.jinja",
+            "genai_config.json",
+            "model.onnx",
+            "model.onnx.data",
+            "special_tokens_map.json",
+            "tokenizer.json",
+            "tokenizer_config.json"
+        },
+
+            // Llama GenAI：chat_template.jinja may define model-specific formatting
+            "llama-onnx-genai" => new[]
+            {
+            "chat_template.jinja",
+            "genai_config.json",
+            "model.onnx",
+            "model.onnx.data",
+            "tokenizer.json",
+            "tokenizer_config.json"
+        },
+
+            // 其他（传统 ONNX：embedding + decoder 双文件）
+            _ => new[]
+            {
             "config.json",
             "tokenizer.json",
             "embedding.int8.onnx",
             decoderFile,
-            "vocab.json"
-        };
-        if (includesExternalDecoderWeights)
-        {
-            fileNames.Add($"{decoderFile}.data");
+            "vocab.json",
+            $"{decoderFile}.data"
         }
+        };
 
         return fileNames.Select(fileName =>
             new ModelFileLink(fileName, $"{repository}{fileName}?view=false")).ToArray();
+    }
+
+    private static async Task EnsureModelEngineColumnAsync(
+        SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info(models);";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var hasEngineId = false;
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (string.Equals(reader.GetString(1), "inference_engine_id", StringComparison.OrdinalIgnoreCase))
+            {
+                hasEngineId = true;
+                break;
+            }
+        }
+        await reader.DisposeAsync();
+        if (!hasEngineId)
+        {
+            await using var migration = connection.CreateCommand();
+            migration.CommandText =
+                "ALTER TABLE models ADD COLUMN inference_engine_id TEXT NOT NULL DEFAULT 'qwen3-onnx';";
+            await migration.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     private static async Task EnsureModelDownloadColumnAsync(
@@ -1213,6 +1487,40 @@ public sealed class SqliteDatabase
         migration.CommandText =
             "ALTER TABLE messages ADD COLUMN was_interrupted INTEGER NOT NULL DEFAULT 0;";
         await migration.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task EnsureMessageGenerationMetadataAsync(
+        SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "PRAGMA table_info(messages);";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                existing.Add(reader.GetString(1));
+            }
+        }
+
+        var migrations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["generation_time_seconds"] =
+                "ALTER TABLE messages ADD COLUMN generation_time_seconds REAL NOT NULL DEFAULT 0;",
+            ["stop_reason"] =
+                "ALTER TABLE messages ADD COLUMN stop_reason TEXT NOT NULL DEFAULT '';"
+        };
+        foreach (var (column, sql) in migrations)
+        {
+            if (existing.Contains(column))
+            {
+                continue;
+            }
+
+            await using var migration = connection.CreateCommand();
+            migration.CommandText = sql;
+            await migration.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     private static async Task EnsureConversationPinnedColumnAsync(

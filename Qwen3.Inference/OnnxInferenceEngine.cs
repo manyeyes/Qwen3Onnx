@@ -14,7 +14,8 @@ public sealed record GenerationStats(
     double AverageTimePerTokenSeconds,
     bool LoopDetected,
     bool ThinkingBudgetExceeded,
-    bool WasCancelled = false);
+    bool WasCancelled = false,
+    string StopReason = "未知");
 
 public sealed class OnnxInferenceEngine : IInferenceEngine
 {
@@ -37,11 +38,7 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
     private readonly OrtMemoryInfo _memoryInfo = OrtMemoryInfo.DefaultInstance;
 
     // ========== KV Cache 复用核心字段 ==========
-    // 上一轮 decoder 输出集合（KV Cache + logits + length）。
-    // 下一轮 Run 时直接把其中 KV 部分作为输入传入，零拷贝。
     private IDisposableReadOnlyCollection<OrtValue>? _previousDecoderOutputs;
-
-    // 首次 prefill 时使用的空 KV Cache（序列长度 = 0）
     private readonly OrtValue[] _emptyKeys;
     private readonly OrtValue[] _emptyValues;
 
@@ -57,6 +54,12 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
 
     public long HistoryLength => _historyLength;
     public string EngineId => "qwen3-onnx";
+
+    /// <summary>当前 Decoder 是否配置为使用 CUDA（基于 session 创建是否成功）。</summary>
+    public bool DecoderUsingCuda { get; }
+
+    /// <summary>当前 Embedding 是否使用 CUDA（固定 false，Embedding 始终 CPU）。</summary>
+    public bool EmbeddingUsingCuda => false;
 
     public OnnxInferenceEngine(AssistantConfig config, ILogger<OnnxInferenceEngine>? logger = null)
     {
@@ -81,22 +84,32 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
         _thinkEndTokenId = thinkEndTokens.Length == 0 ? null : checked((int)thinkEndTokens[^1]);
         _logger?.LogInformation("Loading Qwen3 ONNX model from {ModelPath}", config.ModelPath);
 
-        using var options = new SessionOptions
-        {
-            IntraOpNumThreads = config.IntraOpNumThreads,
-            InterOpNumThreads = config.InterOpNumThreads,
-            ExecutionMode = ExecutionMode.ORT_SEQUENTIAL,
-            GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
-        };
-        options.AddSessionConfigEntry("session.enable_quant_qdq_cleanup", "1");
-        options.AddSessionConfigEntry("session.qdq_matmulnbits_accuracy_level", "1");
-        options.AddSessionConfigEntry("session.set_denormal_as_zero", "1");
-        // 自旋 A/B：如更慢或更快，自行切换
-        // options.AddSessionConfigEntry("session.intra_op.allow_spinning", "1");
-        // options.AddSessionConfigEntry("session.inter_op.allow_spinning", "1");
+        // ==================== Embedding：固定 CPU ====================
+        _embeddingSession = CreateCpuSession(config.EmbeddingModelPath, config);
+        _logger?.LogInformation("Embedding session created on CPU.");
 
-        _embeddingSession = new InferenceSession(config.EmbeddingModelPath, options);
-        _decoderSession = new InferenceSession(config.DecoderModelPath, options);
+        // ==================== Decoder：按路径和构建后端判断 ====================
+        var isInt4Model = config.DecoderModelPath.Contains("int4", StringComparison.OrdinalIgnoreCase);
+#if INFERENCE_BACKEND_GPU
+        if (config.UseCuda && isInt4Model)
+        {
+            _logger?.LogInformation("INT4 model selected; trying CUDA first, fallback to CPU.");
+            _decoderSession = CreateDecoderSessionWithCudaFallback(
+                config.DecoderModelPath, config, out bool usingCuda);
+            DecoderUsingCuda = usingCuda;
+            _logger?.LogInformation(usingCuda
+                ? "Decoder session created with CUDA provider."
+                : "CUDA unavailable or failed; decoder session fell back to CPU.");
+        }
+        else
+#endif
+        {
+            _logger?.LogInformation(isInt4Model
+                ? "Using CPU decoder session because CUDA is disabled or not selected."
+                : "Using CPU decoder session.");
+            _decoderSession = CreateCpuSession(config.DecoderModelPath, config);
+            DecoderUsingCuda = false;
+        }
 
         var embeddingInputs = _embeddingSession.InputMetadata.Keys.ToArray();
         if (embeddingInputs.Length != 1)
@@ -138,6 +151,102 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
         }
     }
 
+    // ==================== Session 创建辅助 ====================
+
+    private static SessionOptions BuildBaseOptions(AssistantConfig config, bool verboseLogging = false)
+    {
+        var options = new SessionOptions
+        {
+            IntraOpNumThreads = config.IntraOpNumThreads,
+            InterOpNumThreads = config.InterOpNumThreads,
+            ExecutionMode = ExecutionMode.ORT_SEQUENTIAL,
+            GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
+        };
+        options.AddSessionConfigEntry("session.enable_quant_qdq_cleanup", "1");
+        options.AddSessionConfigEntry("session.qdq_matmulnbits_accuracy_level", "4");
+        options.AddSessionConfigEntry("session.set_denormal_as_zero", "1");
+        if (verboseLogging)
+            options.LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_VERBOSE;
+        return options;
+    }
+
+    private static InferenceSession CreateCpuSession(string modelPath, AssistantConfig config)
+    {
+        using var options = BuildBaseOptions(config);
+        return new InferenceSession(modelPath, options);
+    }
+
+    /// <summary>
+    /// 优先 CUDA，失败回退 CPU。
+    /// 判断依据：AppendExecutionProvider_CUDA 是否抛异常 + InferenceSession 是否成功构造。
+    /// C# API 无 GetProviders()，无法在构造后精确查询实际生效的 provider，
+    /// 因此以“追加成功 + 构造成功”作为 CUDA 可用的标志。
+    /// </summary>
+    private InferenceSession CreateDecoderSessionWithCudaFallback(
+        string modelPath, AssistantConfig config, out bool usingCuda)
+    {
+        usingCuda = false;
+
+        try
+        {
+            var cudaOptions = BuildBaseOptions(config);
+            try
+            {
+                cudaOptions.AppendExecutionProvider_CUDA(0);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "AppendExecutionProvider_CUDA failed; falling back to CPU.");
+                cudaOptions.Dispose();
+                return CreateCpuSession(modelPath, config);
+            }
+
+            InferenceSession session;
+            try
+            {
+                session = new InferenceSession(modelPath, cudaOptions);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Decoder session creation with CUDA failed; falling back to CPU.");
+                cudaOptions.Dispose();
+                return CreateCpuSession(modelPath, config);
+            }
+            finally
+            {
+                cudaOptions.Dispose();
+            }
+
+            usingCuda = true;
+            return session;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Unexpected CUDA initialization failure; falling back to CPU.");
+            return CreateCpuSession(modelPath, config);
+        }
+    }
+
+    /// <summary>
+    /// 可选：开启 Verbose 日志重建 Decoder session，用于排查 CUDA 是否真的生效。
+    /// 仅在调试时调用，发布版本不要调用。
+    /// </summary>
+    public void LogDecoderProviderInfo()
+    {
+        if (_logger == null) return;
+        try
+        {
+            using var options = BuildBaseOptions(_config, verboseLogging: true);
+            // 仅创建并立即释放，用于触发 provider 注册日志
+            using var probe = new InferenceSession(_config.DecoderModelPath, options);
+            _logger.LogInformation("Verbose logging probe session created for decoder provider inspection.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to create verbose logging probe session.");
+        }
+    }
+
     public string FormatSystemPrompt(string systemPrompt) =>
         $"<|im_start|>system\n{systemPrompt}<|im_end|>\n";
 
@@ -163,7 +272,6 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
 
     public void ResetState()
     {
-        // ========== 关键：正确释放上一轮输出，否则 KV Cache 的 pin 内存会累积 ==========
         _previousDecoderOutputs?.Dispose();
         _previousDecoderOutputs = null;
         _historyLength = 0;
@@ -207,13 +315,19 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
         var thinkingBudgetExceeded = false;
         var thinkClosed = false;
         var wasCancelled = false;
+        var stopReason = "达到最大生成长度";
         long generationLimit = config.MaxNewTokens +
             (config.ThinkMode && config.ThinkingBudget > 0 && _thinkEndTokenId.HasValue
                 ? config.ThinkingBudget : 0);
 
         for (long step = 0; step < generationLimit; step++)
         {
-            if (cancellationToken.IsCancellationRequested) { wasCancelled = true; break; }
+            if (cancellationToken.IsCancellationRequested)
+            {
+                wasCancelled = true;
+                stopReason = "用户停止生成";
+                break;
+            }
 
             int tokenId;
             if (config.ThinkMode && config.ThinkingBudget > 0 && !thinkClosed && _thinkEndTokenId.HasValue &&
@@ -241,7 +355,11 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
                 if (config.ThinkMode && config.ThinkingBudget > 0)
                     generationLimit = step + config.MaxNewTokens + 1L;
             }
-            if (tokenId is ImEndTokenId or EndOfTextTokenId) break;
+            if (tokenId is ImEndTokenId or EndOfTextTokenId)
+            {
+                stopReason = $"遇到 EOS token ({tokenId})";
+                break;
+            }
 
             _generatedTokens.Add(tokenId);
             _generatedTokenSet.Add(tokenId);
@@ -253,15 +371,24 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
                 DetectLoop(_generatedTokens, config.LoopCheckWindow, config.LoopRepeatThreshold))
             {
                 loopDetected = true;
+                stopReason = "检测到重复输出循环";
                 _logger?.LogWarning("Generation stopped after detecting a repeated token loop");
                 break;
             }
 
-            if (_historyLength >= _config.MaxSequenceLength) break;
+            if (_historyLength >= _config.MaxSequenceLength)
+            {
+                stopReason = "达到最大上下文长度";
+                break;
+            }
             logits = RunDecoder(GetEmbedding([tokenId]));
         }
 
         wasCancelled |= cancellationToken.IsCancellationRequested;
+        if (wasCancelled)
+        {
+            stopReason = "用户停止生成";
+        }
         stopwatch.Stop();
         var totalTokens = _generatedTokens.Count;
         var totalSeconds = stopwatch.Elapsed.TotalSeconds;
@@ -269,7 +396,7 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
             totalTokens, totalSeconds,
             totalSeconds > 0 ? totalTokens / totalSeconds : 0,
             totalTokens > 0 ? totalSeconds / totalTokens : 0,
-            loopDetected, thinkingBudgetExceeded, wasCancelled));
+            loopDetected, thinkingBudgetExceeded, wasCancelled, stopReason));
     }
 
     public void Dispose()
@@ -313,7 +440,6 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
         _idsLenBuffer[0] = hiddenStates.Dimensions[1];
         _attnBuffer[0] = _attentionMask;
 
-        // 每步新建的临时 OrtValue，Run 返回后立即释放
         using var hiddenOrt = OrtValue.CreateTensorValueFromMemory<float>(
             _memoryInfo, hiddenStates.Buffer, ToLongArray(hiddenStates.Dimensions));
         using var historyLenOrt = OrtValue.CreateTensorValueFromMemory<long>(
@@ -331,9 +457,6 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
             { "attention_mask", attnOrt }
         };
 
-        // ========== 零拷贝 KV Cache 复用 ==========
-        // 上一轮的 decoder 输出直接作为本轮的 KV 输入，不拷贝任何数据。
-        // 这是 Python 端能达到正常速度的核心原因。
         if (_previousDecoderOutputs is not null)
         {
             for (var layer = 0; layer < _numLayers; layer++)
@@ -344,7 +467,6 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
         }
         else
         {
-            // 首次 prefill：使用空 KV
             for (var layer = 0; layer < _numLayers; layer++)
             {
                 inputs[$"in_key_{layer}"] = _emptyKeys[layer];
@@ -354,12 +476,10 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
 
         var outputs = _decoderSession.Run(new RunOptions(), inputs, _decoderOutputNames);
 
-        // 交换并释放上一轮输出（旧输出的 OrtValue 会在 Run 内部被消费完后安全释放）
         var oldOutputs = _previousDecoderOutputs;
         _previousDecoderOutputs = outputs;
         oldOutputs?.Dispose();
 
-        // 读取 logits（采样需要可写数组，这里保留一次拷贝）
         var logitsSpan = outputs[^2].GetTensorDataAsSpan<float>();
         var logits = logitsSpan.ToArray();
 
@@ -376,7 +496,7 @@ public sealed class OnnxInferenceEngine : IInferenceEngine
         return result;
     }
 
-    // ==================== 以下为原有逻辑，保持不变 ====================
+    // ==================== 原有逻辑，保持不变 ====================
 
     private void ValidateDecoderContract()
     {

@@ -1,17 +1,18 @@
 # Qwen3 ONNX Inference for .NET
 
-使用 C#、ONNX Runtime 在本地运行 Qwen3 INT8 / W4A32 ONNX 模型。方案包含可复用的推理核心、交互式控制台和独立 CLI，支持场景化生成参数、KV Cache、对话历史、日志及可扩展的推理引擎接口。
+使用 C#、ONNX Runtime 在本地运行 Qwen3 ONNX 模型。方案包含可复用的推理核心、交互式控制台、独立 CLI 和 Avalonia 桌面端，支持 ONNX Runtime GenAI 模型、CPU/CUDA 后端切换、场景化生成参数、对话历史、日志及可扩展的推理引擎接口。
 
 > CLI 和交互式控制台直接使用本地模型文件；桌面端可在模型管理中按需下载内置 ModelScope 模型。模型权重不包含在代码仓库中。
 
 ## 功能
 
-- **本地 ONNX 推理**：拆分 embedding 与 decoder，使用 ONNX Runtime CPU Execution Provider。
+- **本地 ONNX 推理**：支持拆分 embedding/decoder 图和 ONNX Runtime GenAI 单图模型；桌面端默认使用 CPU 后端，也可构建 CUDA 后端。
 - **模型推理核心**：统一的 `ChatAssistant` API、`IInferenceEngine` 接口和可注册的 `IInferenceEngineFactory`。
 - **两种应用入口**：
   - `Qwen3.Cli`：单次问答命令行，提供参数解析、校验、帮助、日志和退出码。
   - `Qwen3.Console`：交互式问答，提供多轮记忆、场景选择和思考模式控制。
 - **Avalonia 桌面应用**：`Qwen3.Desktop` 使用 MVVM 页面切换，提供本地聊天、可选择文本的消息、模型 Git/HTTP 下载、SQLite 历史、本地账户注册与用户中心；支持思考预算后继续回答和保存中断的部分回复，侧栏底部菜单包含账户管理、官网与关于页面。
+- **自动引擎选择**：模型目录记录推理引擎类型；桌面端选择模型后自动创建对应的 ONNX 或 ONNX Runtime GenAI 引擎。
 - **生成控制**：温度、Top-P / Top-K、重复惩罚、思考预算、输出长度、流式输出及复读/循环检测。
 - **场景配置**：`fast_qa`、`deep`、`roleplay`、`precise`、`chitchat`。
 - **本地日志**：CLI 标准错误日志及可选 JSON Lines 日志文件。
@@ -24,6 +25,8 @@
 | --- | --- | --- |
 | 0.6B | [ModelScope](https://modelscope.cn/models/manyeyes/Qwen3-0.6B-int8-onnx) | [ModelScope](https://modelscope.cn/models/manyeyes/Qwen3-0.6B-w4a32-onnx) |
 | 1.7B | [ModelScope](https://modelscope.cn/models/manyeyes/Qwen3-1.7B-int8-onnx) | [ModelScope](https://modelscope.cn/models/manyeyes/Qwen3-1.7B-w4a32-onnx) |
+
+另提供使用 ONNX Runtime GenAI 的 Qwen3、Llama、Phi-4-mini 和 DeepSeek-R1-Distill-Qwen 模型。桌面端内置这些模型并预置逐文件 HTTP 下载地址；拆分 ONNX 模型清单包含 decoder 外部 `.onnx.data` 权重，GenAI 模型清单包含 `chat_template.jinja` 和 `model.onnx.data`，并按 Phi/DeepSeek tokenizer 格式校验其他必需文件。
 
 请在 ModelScope 模型页面下载模型文件。下载后的文件组织方式可能随模型仓库版本变化；请确认 tokenizer、`config.json`、embedding ONNX、decoder ONNX 和所需的外部 ONNX 数据文件完整。
 
@@ -52,8 +55,8 @@ Qwen3Onnx.sln
 
 ### 环境
 
-- .NET 8 SDK
-- Windows、Linux 或 macOS（桌面发布请使用对应的 .NET 8 Runtime）
+- .NET 9 SDK
+- Windows、Linux 或 macOS（桌面发布请使用对应的 .NET 9 Runtime）
 - 与当前推理引擎输入输出契约兼容的模型文件
 
 ### 构建
@@ -68,6 +71,16 @@ dotnet build Qwen3Onnx.sln
 ```powershell
 dotnet run --project Qwen3.Desktop
 ```
+
+`Qwen3.Desktop` 只引用 `Qwen3.Inference`。桌面端默认使用 GPU 后端和 CUDA 12；可按需选择 CPU 或 CUDA 13：
+
+```powershell
+dotnet build Qwen3.Desktop\Qwen3.Desktop.csproj -p:InferenceBackend=Cpu
+dotnet build Qwen3.Desktop\Qwen3.Desktop.csproj -p:InferenceBackend=Gpu -p:CudaVersion=12
+dotnet build Qwen3.Desktop\Qwen3.Desktop.csproj -p:InferenceBackend=Gpu -p:CudaVersion=13
+```
+
+`InferenceBackend` 和 `CudaVersion` 会由桌面项目传递到推理核心项目，由 `Qwen3.Inference.csproj` 选择相应 ONNX Runtime / GenAI NuGet 包。CPU 模式使用 ORT 1.31.0 / GenAI 0.18.0；CUDA 12 使用 ORT GPU 1.26.0 / GenAI CUDA 0.14.1；CUDA 13 使用 ORT GPU 1.31.0 / GenAI CUDA 0.18.0。目标机器须安装与所选包兼容的 NVIDIA 驱动及 CUDA 运行时；GPU 构建成功不等于已验证目标机器上的 CUDA 推理。
 
 首次启动会生成一次性管理员密码并在应用中显示；请立即保存。桌面端功能、模型安装方式、SQLite 数据位置、账户隔离和发布说明见[桌面端使用指南](docs/USER_GUIDE.md#14-avalonia-桌面端)。
 
@@ -158,13 +171,14 @@ Console.WriteLine($"生成速度：{result.Generation.TokensPerSecond:F1} tokens
 
 ## 配置与依赖
 
-- 目标框架：.NET 8
+- 目标框架：.NET 9
 - 命令行：`System.CommandLine 2.0.13`
-- 推理：`Microsoft.ML.OnnxRuntime 1.31.0`
+- CPU 推理：`Microsoft.ML.OnnxRuntime 1.31.0`、`Microsoft.ML.OnnxRuntimeGenAI 0.18.0`
+- 可选 GPU 推理：在同一个 `Qwen3.Inference` 工程中通过 `InferenceBackend` 和 `CudaVersion` 选择 CUDA 包
 - Tokenizer：`Tokenizers.DotNet 1.4.1`
 - 日志：`Microsoft.Extensions.Logging.Console 9.0.0`
 
-当前 ONNX 推理实现显式使用 CPU Execution Provider；推理工程配置了 Windows x64、Linux x64/arm64 和 macOS x64/arm64 的 Tokenizers 原生运行时。跨平台发布与目标机运行仍需按相应 RID 验证。
+桌面端默认使用 CUDA 12；可通过 `InferenceBackend=Cpu` 选择 CPU，或指定 `CudaVersion=13` 使用 CUDA 13 依赖。跨平台发布与目标机运行仍需按相应 RID、ONNX Runtime 与 CUDA 版本验证。
 
 ## 文档
 
@@ -173,6 +187,7 @@ Console.WriteLine($"生成速度：{result.Generation.TokensPerSecond:F1} tokens
 - [ModelScope：Qwen3-0.6B W4A32 ONNX](https://modelscope.cn/models/manyeyes/Qwen3-0.6B-w4a32-onnx)
 - [ModelScope：Qwen3-1.7B INT8 ONNX](https://modelscope.cn/models/manyeyes/Qwen3-1.7B-int8-onnx)
 - [ModelScope：Qwen3-1.7B W4A32 ONNX](https://modelscope.cn/models/manyeyes/Qwen3-1.7B-w4a32-onnx)
+- [ModelScope：Qwen3-4B INT4 GenAI](https://modelscope.cn/models/manyeyes/Qwen3-4B-int4-genai)
 
 ## 免责声明
 

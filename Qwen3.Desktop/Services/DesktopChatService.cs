@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+  using Microsoft.Extensions.Logging;
 using Qwen3.Desktop.Models;
 using Qwen3.Inference;
 
@@ -79,11 +79,17 @@ public sealed class DesktopChatService : IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         var modelConfig = new AssistantConfig
         {
-            EngineId = "qwen3-onnx",
+            EngineId = model.EngineId,
             ModelPath = model.LocalPath,
+            GenaiModelPath = model.RequiresGenAi ? model.LocalPath : string.Empty,
             EmbeddingModelName = model.EmbeddingFileName,
             DecoderModelName = model.DecoderFileName,
-            SystemPrompt = generationConfig.SystemPrompt ?? "You are a helpful assistant."
+            SystemPrompt = generationConfig.SystemPrompt ?? "You are a helpful assistant.",
+#if INFERENCE_BACKEND_GPU
+            UseCuda = true
+#else
+            UseCuda = false
+#endif
         };
         await Task.Run(() => EnsureAssistant(model.Id, modelConfig), cancellationToken);
         var assistant = _assistant
@@ -163,11 +169,13 @@ public sealed class DesktopChatService : IDisposable
             result.Answer,
             result.Generation.TotalTokens,
             saveToken,
-            result.Generation.WasCancelled);
+            result.Generation.WasCancelled,
+            result.Generation.TotalTimeSeconds,
+            result.Generation.StopReason);
+        var savedMessages = await _database.GetMessagesAsync(id, ownerUserId, saveToken);
         if (firstTurn && !result.Generation.WasCancelled)
         {
-            var savedHistory = ToTurns(await _database.GetMessagesAsync(
-                id, ownerUserId, saveToken));
+            var savedHistory = ToTurns(savedMessages);
             await Task.Run(
                 () => assistant.RestoreHistory(savedHistory, generationConfig),
                 saveToken);
@@ -175,7 +183,9 @@ public sealed class DesktopChatService : IDisposable
 
         var conversation = await _database.GetConversationAsync(id, ownerUserId, saveToken)
             ?? throw new InvalidOperationException("Conversation disappeared after saving the response.");
-        return new ChatSendResult(conversation, result, promptText);
+        return new ChatSendResult(
+            conversation, result, promptText,
+            savedMessages[^2].Id, savedMessages[^1].Id);
     }
 
     public async Task<ChatSendResult> RegenerateLastReplyAsync(
@@ -243,12 +253,22 @@ public sealed class DesktopChatService : IDisposable
         await _database.ReplaceAssistantReplyAsync(
             conversationId, ownerUserId, oldAssistantMessage.Id, result.Answer,
             result.PromptTokens, result.Generation.TotalTokens, saveToken,
-            result.Generation.WasCancelled);
+            result.Generation.WasCancelled, result.Generation.TotalTimeSeconds,
+            result.Generation.StopReason);
         var updatedConversation = await _database.GetConversationAsync(
             conversationId, ownerUserId, saveToken)
             ?? throw new InvalidOperationException("Conversation disappeared after regenerating the response.");
-        return new ChatSendResult(updatedConversation, result, userMessage.Content);
+        return new ChatSendResult(
+            updatedConversation, result, userMessage.Content,
+            userMessage.Id, oldAssistantMessage.Id);
     }
+
+    public Task DeleteMessageAsync(
+        string conversationId,
+        string messageId,
+        string? ownerUserId,
+        CancellationToken cancellationToken = default) =>
+        _database.DeleteMessageAsync(conversationId, messageId, ownerUserId, cancellationToken);
 
     public void Dispose()
     {
@@ -323,4 +343,6 @@ public sealed class DesktopChatService : IDisposable
 public sealed record ChatSendResult(
     ConversationSummary Conversation,
     AssistantResult Assistant,
-    string PromptText);
+    string PromptText,
+    string UserMessageId = "",
+    string AssistantMessageId = "");
